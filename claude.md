@@ -22,7 +22,7 @@ Build a backlog/sprint planning board application using the Ivy Framework with i
 
 2. **Set up main app structure**
    - Dashboard with navigation tabs
-   - Backlog view, Sprint Planning view, Sprint Board view
+   - Backlog view, Sprint Board view
    - Use TabsLayout for navigation
 
 ### Phase 2: Backlog Management
@@ -34,35 +34,30 @@ Build a backlog/sprint planning board application using the Ivy Framework with i
 4. **Create backlog UI**
    - Single-line card-based story display with issue type badges
    - Add new story form using TextInput, NumberInput, and SelectInput for issue type
-   - Priority reordering with move-to-top/bottom buttons (⇈⇊)
-   - Status badges, story point indicators, and color-coded issue type badges
+   - Sprint management: Add/Remove items to/from current sprint
+   - Story point indicators and color-coded issue type badges
    - Issue types: Task (gray), Bug (red), Story (blue), Epic (outline)
 
 ## ✅ Completed Enhancements (Phase 2+)
 - **Issue Type Classification**: Dropdown selection for Task, Bug, Story, Epic with color-coded badges
-- **Priority Management**: Click-to-reorder system with move-to-top (⇈) and move-to-bottom (⇊) buttons
-- **Status Workflow**: Progressive status changes (Backlog → Todo → In Progress → Review → Done)
+- **Sprint Management**: Create sprints and add/remove backlog items to/from current sprint
+- **Backlog Operations**: Add items to sprint with "Add to Sprint" button, remove with "Remove from Sprint"
 - **Enhanced UI**: Single-line cards with multiple badges and action buttons
 - **Form Validation**: Required fields and story point limits (1-21)
 - **Compact Layout**: Optimized single-line item display with minimal spacing
 
-### Phase 3: Sprint Planning
-5. **Build sprint management**
-   - UseState<ImmutableArray<Sprint>> for sprints
-   - Create sprint form with date pickers and goal setting
-   - Move items from backlog to sprint (update item status)
-
-6. **Sprint planning interface**
-   - Two-column layout: Available backlog items | Current sprint
-   - Capacity tracking with progress bars
-   - Drag-and-drop simulation with move buttons
-
-### Phase 4: Sprint Board (Kanban)
-7. **Create Kanban board**
-   - Four columns: To Do, In Progress, Review, Done
-   - Filter sprint items by status
-   - Move items between columns (update item status)
+### Phase 3: Sprint Board (Jira-style Active Sprint)
+5. **Create sprint board layout**
+   - Three-column Kanban board: "To Do" | "In Progress" | "Done"
+   - Items automatically appear in "To Do" when added to sprint from backlog
+   - Sprint board items can move between columns using status buttons
    - Real-time updates using UseState triggers
+
+6. **Sprint board functionality**
+   - Sprint items display with issue type, title, description, story points
+   - Status progression: To Do → In Progress → Done
+   - Move items between columns with action buttons
+   - Items remain in sprint throughout their lifecycle
 
 ### Phase 5: Basic Reporting
 8. **Simple metrics dashboard**
