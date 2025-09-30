@@ -9,6 +9,7 @@ public class TasklyApp : ViewBase
         int StoryPoints,
         int Priority,
         ItemStatus Status,
+        IssueType Type,
         int? SprintId = null
     );
 
@@ -34,6 +35,26 @@ public class TasklyApp : ViewBase
         InProgress,
         Review,
         Done
+    }
+
+    public enum IssueType
+    {
+        Task,
+        Bug,
+        Story,
+        Epic
+    }
+
+    private static Badge GetIssueTypeBadge(IssueType type)
+    {
+        return type switch
+        {
+            IssueType.Task => new Badge("Task").Secondary(),
+            IssueType.Bug => new Badge("Bug").Destructive(),
+            IssueType.Story => new Badge("Story").Primary(),
+            IssueType.Epic => new Badge("Epic").Outline(),
+            _ => new Badge(type.ToString()).Secondary()
+        };
     }
 
     public override object? Build()
@@ -65,6 +86,16 @@ public class TasklyApp : ViewBase
         var newTitle = UseState("");
         var newDescription = UseState("");
         var newStoryPoints = UseState(1);
+        var newIssueType = UseState(IssueType.Task);
+
+        // Sprint management
+        var currentSprint = UseState((Sprint?)null);
+        var nextSprintId = UseState(1);
+
+        // State for creating new sprint
+        var newSprintName = UseState("");
+        var newSprintGoal = UseState("");
+
 
         // Helper methods for CRUD operations
         void AddItem()
@@ -77,7 +108,8 @@ public class TasklyApp : ViewBase
                     Description: newDescription.Value,
                     StoryPoints: newStoryPoints.Value,
                     Priority: backlogItems.Value.Length + 1,
-                    Status: ItemStatus.Backlog
+                    Status: ItemStatus.Backlog,
+                    Type: newIssueType.Value
                 );
 
                 backlogItems.Set(backlogItems.Value.Add(newItem));
@@ -87,6 +119,7 @@ public class TasklyApp : ViewBase
                 newTitle.Set("");
                 newDescription.Set("");
                 newStoryPoints.Set(1);
+                newIssueType.Set(IssueType.Task);
             }
         }
 
@@ -95,45 +128,6 @@ public class TasklyApp : ViewBase
             backlogItems.Set(backlogItems.Value.Where(item => item.Id != id).ToImmutableArray());
         }
 
-        void MovePriorityUp(int id)
-        {
-            var items = backlogItems.Value.OrderBy(x => x.Priority).ToArray();
-            var currentIndex = Array.FindIndex(items, x => x.Id == id);
-
-            if (currentIndex > 0)
-            {
-                // Swap priorities
-                var currentItem = items[currentIndex];
-                var previousItem = items[currentIndex - 1];
-
-                var updatedItems = backlogItems.Value
-                    .Select(item => item.Id == currentItem.Id ? item with { Priority = previousItem.Priority } :
-                                   item.Id == previousItem.Id ? item with { Priority = currentItem.Priority } : item)
-                    .ToImmutableArray();
-
-                backlogItems.Set(updatedItems);
-            }
-        }
-
-        void MovePriorityDown(int id)
-        {
-            var items = backlogItems.Value.OrderBy(x => x.Priority).ToArray();
-            var currentIndex = Array.FindIndex(items, x => x.Id == id);
-
-            if (currentIndex < items.Length - 1)
-            {
-                // Swap priorities
-                var currentItem = items[currentIndex];
-                var nextItem = items[currentIndex + 1];
-
-                var updatedItems = backlogItems.Value
-                    .Select(item => item.Id == currentItem.Id ? item with { Priority = nextItem.Priority } :
-                                   item.Id == nextItem.Id ? item with { Priority = currentItem.Priority } : item)
-                    .ToImmutableArray();
-
-                backlogItems.Set(updatedItems);
-            }
-        }
 
         void UpdateItemStatus(int id, ItemStatus newStatus)
         {
@@ -142,6 +136,49 @@ public class TasklyApp : ViewBase
                 .ToImmutableArray();
 
             backlogItems.Set(updatedItems);
+        }
+
+        void CreateSprint()
+        {
+            if (!string.IsNullOrWhiteSpace(newSprintName.Value))
+            {
+                var sprint = new Sprint(
+                    Id: nextSprintId.Value,
+                    Name: newSprintName.Value,
+                    StartDate: DateTime.Now,
+                    EndDate: DateTime.Now.AddDays(14), // 2-week sprint
+                    Goal: newSprintGoal.Value,
+                    ItemIds: ImmutableArray<int>.Empty
+                );
+
+                currentSprint.Set(sprint);
+                nextSprintId.Set(nextSprintId.Value + 1);
+
+                // Clear form
+                newSprintName.Set("");
+                newSprintGoal.Set("");
+            }
+        }
+
+        void MoveItemToSprint(int itemId)
+        {
+            if (currentSprint.Value != null)
+            {
+                // Update item status and assign to sprint
+                var updatedItems = backlogItems.Value
+                    .Select(item => item.Id == itemId ?
+                        item with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id } : item)
+                    .ToImmutableArray();
+
+                // Update sprint with new item
+                var updatedSprint = currentSprint.Value with
+                {
+                    ItemIds = currentSprint.Value.ItemIds.Add(itemId)
+                };
+
+                backlogItems.Set(updatedItems);
+                currentSprint.Set(updatedSprint);
+            }
         }
 
         return Layout.Vertical(
@@ -154,59 +191,120 @@ public class TasklyApp : ViewBase
                     newTitle.ToTextInput().Placeholder("Enter title..."),
                     newDescription.ToTextInput().Placeholder("Enter description..."),
                     newStoryPoints.ToNumberInput().Min(1).Max(21),
+                    new SelectInput<IssueType>(
+                        value: newIssueType.Value,
+                        onChange: e => { newIssueType.Set(e.Value); return ValueTask.CompletedTask; },
+                        options: new[] {
+                            new Option<IssueType>("Task", IssueType.Task),
+                            new Option<IssueType>("Bug", IssueType.Bug),
+                            new Option<IssueType>("Story", IssueType.Story),
+                            new Option<IssueType>("Epic", IssueType.Epic)
+                        }
+                    ),
                     new Button("Add Item", AddItem).Primary()
                 )
-            ).Title("New Item"),
+            ),
 
-            // Display existing items
-            Text.H3($"Backlog Items ({backlogItems.Value.Length})"),
+            // Current Sprint section
+            currentSprint.Value == null ?
+                new Card(
+                    Layout.Vertical(
+                        Text.H3("Create New Sprint"),
+                        newSprintName.ToTextInput().Placeholder("Sprint name (e.g., Sprint 1)"),
+                        newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
+                        new Button("Create Sprint", CreateSprint).Primary()
+                    )
+                ) :
+                new Card(
+                    Layout.Vertical(
+                        Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
+                        !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                            Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                        Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}"),
+
+                        // Display sprint items
+                        currentSprint.Value.ItemIds.Length > 0 ?
+                            Layout.Vertical(
+                                backlogItems.Value
+                                    .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
+                                    .OrderBy(x => x.Id)
+                                    .Select(item => BuildSprintItemCard(item))
+                                    .ToArray()
+                            ) :
+                            Text.P("No items in sprint yet. Click 'Start' on backlog items to add them.")
+                    )
+                ),
+
+            // Display existing items (not in sprint)
+            Text.H3($"Backlog Items ({backlogItems.Value.Where(x => x.SprintId == null).Count()})"),
             Layout.Vertical(
-                backlogItems.Value.OrderBy(x => x.Priority).Select(item =>
+                backlogItems.Value
+                    .Where(item => item.SprintId == null)
+                    .OrderBy(x => x.Id)
+                    .Select(item =>
                 {
-                    var isFirst = item.Priority == backlogItems.Value.Min(x => x.Priority);
-                    var isLast = item.Priority == backlogItems.Value.Max(x => x.Priority);
-
                     return new Card(
-                        Layout.Vertical(
-                            // Header with title and priority info
-                            Layout.Horizontal(
-                                Text.Strong(item.Title),
-                                new Badge($"#{item.Priority}").Secondary()
-                            ),
+                        Layout.Horizontal(
+                            // Issue type - compact
+                            GetIssueTypeBadge(item.Type),
 
-                            // Description
-                            !string.IsNullOrEmpty(item.Description) ? Text.P(item.Description) : null,
+                            // Title and description - expanded to fill available space
+                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
+                                $"{item.Title} - {item.Description}" : item.Title)
+                                .Width(Size.Grow()),
 
-                            // Status and story points
-                            Layout.Horizontal(
-                                new Badge(item.Status.ToString()).Outline(),
-                                new Badge($"{item.StoryPoints} pts").Primary()
-                            ),
+                            // Right side controls - compact
+                            new Badge(item.Status.ToString()).Outline(),
+                            new Badge($"{item.StoryPoints} pts").Primary(),
 
-                            // Action buttons
-                            Layout.Horizontal(
-                                // Priority buttons
-                                !isFirst ? new Button("↑", () => MovePriorityUp(item.Id)).Small() : null,
-                                !isLast ? new Button("↓", () => MovePriorityDown(item.Id)).Small() : null,
+                            // Status change button (only show Start if there's an active sprint)
+                            item.Status == ItemStatus.Backlog && currentSprint.Value != null ?
+                                new Button("Start", () => MoveItemToSprint(item.Id)).Primary().Small() :
+                            item.Status == ItemStatus.Todo ?
+                                new Button("Progress", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Secondary().Small() :
+                            item.Status == ItemStatus.InProgress ?
+                                new Button("Review", () => UpdateItemStatus(item.Id, ItemStatus.Review)).Secondary().Small() :
+                            item.Status == ItemStatus.Review ?
+                                new Button("Done", () => UpdateItemStatus(item.Id, ItemStatus.Done)).Primary().Small() : null,
 
-                                // Status change buttons
-                                item.Status == ItemStatus.Backlog ?
-                                    new Button("Start", () => UpdateItemStatus(item.Id, ItemStatus.Todo)).Primary().Small() : null,
-                                item.Status == ItemStatus.Todo ?
-                                    new Button("In Progress", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Secondary().Small() : null,
-                                item.Status == ItemStatus.InProgress ?
-                                    new Button("Review", () => UpdateItemStatus(item.Id, ItemStatus.Review)).Secondary().Small() : null,
-                                item.Status == ItemStatus.Review ?
-                                    new Button("Done", () => UpdateItemStatus(item.Id, ItemStatus.Done)).Primary().Small() : null,
-
-                                // Delete button
-                                new Button("Delete", () => DeleteItem(item.Id)).Destructive().Small()
-                            )
+                            // Delete button
+                            new Button("Delete", () => DeleteItem(item.Id)).Destructive().Small()
                         )
                     );
                 }).Where(card => card != null).ToArray()
             )
         );
+
+        // Helper method for building sprint item cards
+        object BuildSprintItemCard(BacklogItem item)
+        {
+            return new Card(
+                Layout.Horizontal(
+                    // Issue type - compact
+                    GetIssueTypeBadge(item.Type),
+
+                    // Title and description - expanded to fill available space
+                    Text.Strong(!string.IsNullOrEmpty(item.Description) ?
+                        $"{item.Title} - {item.Description}" : item.Title)
+                        .Width(Size.Grow()),
+
+                    // Right side controls - compact
+                    new Badge(item.Status.ToString()).Outline(),
+                    new Badge($"{item.StoryPoints} pts").Primary(),
+
+                    // Status change buttons for sprint items
+                    item.Status == ItemStatus.Todo ?
+                        new Button("In Progress", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Secondary().Small() :
+                    item.Status == ItemStatus.InProgress ?
+                        new Button("Review", () => UpdateItemStatus(item.Id, ItemStatus.Review)).Secondary().Small() :
+                    item.Status == ItemStatus.Review ?
+                        new Button("Done", () => UpdateItemStatus(item.Id, ItemStatus.Done)).Primary().Small() : null,
+
+                    // Delete button
+                    new Button("Delete", () => DeleteItem(item.Id)).Destructive().Small()
+                )
+            );
+        }
     }
 
     private object BuildSprintPlanningView()
