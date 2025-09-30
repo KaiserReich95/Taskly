@@ -14,9 +14,10 @@ Build a backlog/sprint planning board application using the Ivy Framework with i
 
 ### Phase 1: Core Data Models & Foundation
 1. **Create core data models as C# records**
-   - `BacklogItem` (Id, Title, Description, StoryPoints, Priority, Status)
+   - `BacklogItem` (Id, Title, Description, StoryPoints, Priority, Status, Type)
    - `Sprint` (Id, Name, StartDate, EndDate, Goal, Items)
    - `Developer` (Id, Name, Capacity)
+   - `IssueType` enum (Task, Bug, Story, Epic)
    - Use ImmutableArray for collections to work with UseState
 
 2. **Set up main app structure**
@@ -31,10 +32,19 @@ Build a backlog/sprint planning board application using the Ivy Framework with i
    - Auto-increment ID generation
 
 4. **Create backlog UI**
-   - Card-based story display
-   - Add new story form using TextInput and NumberInput
-   - Priority drag-and-drop ordering (simulate with up/down buttons initially)
-   - Status badges and story point indicators
+   - Single-line card-based story display with issue type badges
+   - Add new story form using TextInput, NumberInput, and SelectInput for issue type
+   - Priority reordering with move-to-top/bottom buttons (⇈⇊)
+   - Status badges, story point indicators, and color-coded issue type badges
+   - Issue types: Task (gray), Bug (red), Story (blue), Epic (outline)
+
+## ✅ Completed Enhancements (Phase 2+)
+- **Issue Type Classification**: Dropdown selection for Task, Bug, Story, Epic with color-coded badges
+- **Priority Management**: Click-to-reorder system with move-to-top (⇈) and move-to-bottom (⇊) buttons
+- **Status Workflow**: Progressive status changes (Backlog → Todo → In Progress → Review → Done)
+- **Enhanced UI**: Single-line cards with multiple badges and action buttons
+- **Form Validation**: Required fields and story point limits (1-21)
+- **Compact Layout**: Optimized single-line item display with minimal spacing
 
 ### Phase 3: Sprint Planning
 5. **Build sprint management**
