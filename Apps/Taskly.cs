@@ -64,6 +64,7 @@ public class TasklyApp : ViewBase
         // Shared state management for all tabs
         var backlogItems = UseState(ImmutableArray<BacklogItem>.Empty);
         var currentSprint = UseState(() => (Sprint)null!);
+        var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
 
         return Layout.Vertical(
             Text.H1("Taskly - Backlog & Sprint Planning"),
@@ -73,13 +74,14 @@ public class TasklyApp : ViewBase
                 onRefresh: null,
                 onReorder: null,
                 selectedIndex: selectedTab.Value,
-                new Tab("Backlog", BuildBacklogView(backlogItems, currentSprint)),
-                new Tab("Sprint Board", BuildSprintBoardView(backlogItems, currentSprint))
+                new Tab("Backlog", BuildBacklogView(backlogItems, currentSprint, archivedSprints)),
+                new Tab("Sprint Board", BuildSprintBoardView(backlogItems, currentSprint, archivedSprints)),
+                new Tab("Sprint Archive", BuildSprintArchiveView(archivedSprints, backlogItems, currentSprint))
             )
         );
     }
 
-    private object BuildBacklogView(IState<ImmutableArray<BacklogItem>> backlogItems, IState<Sprint> currentSprint)
+    private object BuildBacklogView(IState<ImmutableArray<BacklogItem>> backlogItems, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints)
     {
         var nextId = UseState(1);
 
@@ -88,6 +90,9 @@ public class TasklyApp : ViewBase
         var newDescription = UseState("");
         var newStoryPoints = UseState(1);
         var newIssueType = UseState(IssueType.Task);
+
+        // Modal state
+        var isAddItemModalOpen = UseState(false);
 
         // Sprint management
         var nextSprintId = UseState(1);
@@ -120,6 +125,9 @@ public class TasklyApp : ViewBase
                 newDescription.Set("");
                 newStoryPoints.Set(1);
                 newIssueType.Set(IssueType.Task);
+
+                // Close modal
+                isAddItemModalOpen.Set(false);
             }
         }
 
@@ -192,29 +200,50 @@ public class TasklyApp : ViewBase
             }
         }
 
+        void ArchiveSprint()
+        {
+            if (currentSprint.Value != null)
+            {
+                // Add current sprint to archived sprints
+                archivedSprints.Set(archivedSprints.Value.Add(currentSprint.Value));
+
+                // Clear current sprint
+                currentSprint.Set((Sprint)null!);
+            }
+        }
+
         return Layout.Vertical(
             Text.H2("Product Backlog"),
 
-            // Add new item form
-            new Card(
-                Layout.Vertical(
-                    Text.H3("Add New Backlog Item"),
-                    newTitle.ToTextInput().Placeholder("Enter title..."),
-                    newDescription.ToTextInput().Placeholder("Enter description..."),
-                    newStoryPoints.ToNumberInput().Min(1).Max(21),
-                    new SelectInput<IssueType>(
-                        value: newIssueType.Value,
-                        onChange: e => { newIssueType.Set(e.Value); return ValueTask.CompletedTask; },
-                        options: new[] {
-                            new Option<IssueType>("Task", IssueType.Task),
-                            new Option<IssueType>("Bug", IssueType.Bug),
-                            new Option<IssueType>("Story", IssueType.Story),
-                            new Option<IssueType>("Epic", IssueType.Epic)
-                        }
-                    ),
-                    new Button("Add Item", AddItem).Primary()
-                )
-            ),
+            // Add new item button
+            new Button("+ Add Backlog Item", () => isAddItemModalOpen.Set(true)).Primary(),
+
+            // Modal dialog using FloatingPanel
+            isAddItemModalOpen.Value ?
+                new FloatingPanel(
+                    new Card(
+                        Layout.Vertical(
+                            Text.H3("Add New Backlog Item"),
+                            newTitle.ToTextInput().Placeholder("Enter title..."),
+                            newDescription.ToTextInput().Placeholder("Enter description..."),
+                            newStoryPoints.ToNumberInput().Min(1).Max(21),
+                            new SelectInput<IssueType>(
+                                value: newIssueType.Value,
+                                onChange: e => { newIssueType.Set(e.Value); return ValueTask.CompletedTask; },
+                                options: new[] {
+                                    new Option<IssueType>("Task", IssueType.Task),
+                                    new Option<IssueType>("Bug", IssueType.Bug),
+                                    new Option<IssueType>("Story", IssueType.Story),
+                                    new Option<IssueType>("Epic", IssueType.Epic)
+                                }
+                            ),
+                            Layout.Horizontal(
+                                new Button("Cancel", () => isAddItemModalOpen.Set(false)).Secondary(),
+                                new Button("Add Item", AddItem).Primary()
+                            ).Gap(8)
+                        )
+                    )
+                ) : null,
 
             // Sprint management section
             currentSprint.Value == null ?
@@ -228,10 +257,15 @@ public class TasklyApp : ViewBase
                 ) :
                 new Card(
                     Layout.Vertical(
-                        Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
-                        !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                            Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                        Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}"),
+                        Layout.Horizontal(
+                            Layout.Vertical(
+                                Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
+                                !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                                    Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                                Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
+                            ).Width(Size.Grow()),
+                            new Button("Archive Sprint", ArchiveSprint).Secondary()
+                        ),
 
                         // Display sprint items
                         currentSprint.Value.ItemIds.Length > 0 ?
@@ -303,7 +337,7 @@ public class TasklyApp : ViewBase
     }
 
 
-    private object BuildSprintBoardView(IState<ImmutableArray<BacklogItem>> backlogItems, IState<Sprint> currentSprint)
+    private object BuildSprintBoardView(IState<ImmutableArray<BacklogItem>> backlogItems, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints)
     {
 
         // Helper method to update item status
@@ -314,6 +348,18 @@ public class TasklyApp : ViewBase
                 .ToImmutableArray();
 
             backlogItems.Set(updatedItems);
+        }
+
+        void ArchiveSprint()
+        {
+            if (currentSprint.Value != null)
+            {
+                // Add current sprint to archived sprints
+                archivedSprints.Set(archivedSprints.Value.Add(currentSprint.Value));
+
+                // Clear current sprint
+                currentSprint.Set((Sprint)null!);
+            }
         }
 
         // Get sprint items by status
@@ -343,11 +389,16 @@ public class TasklyApp : ViewBase
                     Layout.Horizontal(
                         new Badge($"{item.StoryPoints} pts").Primary(),
 
-                        // Status progression buttons
+                        // Status progression buttons - forward and backward
                         item.Status == ItemStatus.Todo ?
                             new Button("Start", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Primary().Small() :
                         item.Status == ItemStatus.InProgress ?
-                            new Button("Complete", () => UpdateItemStatus(item.Id, ItemStatus.Done)).Primary().Small() :
+                            Layout.Horizontal(
+                                new Button("← Reverse", () => UpdateItemStatus(item.Id, ItemStatus.Todo)).Destructive().Small(),
+                                new Button("Complete", () => UpdateItemStatus(item.Id, ItemStatus.Done)).Primary().Small()
+                            ).Gap(4) :
+                        item.Status == ItemStatus.Done ?
+                            new Button("← Reverse", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Destructive().Small() :
                         null
                     ).Gap(8)
                 ).Gap(8)
@@ -364,13 +415,18 @@ public class TasklyApp : ViewBase
                 ) :
                 new Card(
                     Layout.Vertical(
-                        Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
-                        !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                            Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                        Text.Small($"Total items: {sprintItems.Length} | " +
-                                  $"To Do: {todoItems.Length} | " +
-                                  $"In Progress: {inProgressItems.Length} | " +
-                                  $"Done: {doneItems.Length}")
+                        Layout.Horizontal(
+                            Layout.Vertical(
+                                Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
+                                !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                                    Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                                Text.Small($"Total items: {sprintItems.Length} | " +
+                                          $"To Do: {todoItems.Length} | " +
+                                          $"In Progress: {inProgressItems.Length} | " +
+                                          $"Done: {doneItems.Length}")
+                            ).Width(Size.Grow()),
+                            new Button("Archive Sprint", ArchiveSprint).Secondary()
+                        )
                     )
                 ),
 
@@ -419,5 +475,86 @@ public class TasklyApp : ViewBase
                         Text.P("No items in sprint yet. Add items from the Backlog tab.")
                     ) : null
         ).Gap(16);
+    }
+
+    private object BuildSprintArchiveView(IState<ImmutableArray<Sprint>> archivedSprints, IState<ImmutableArray<BacklogItem>> backlogItems, IState<Sprint> currentSprint)
+    {
+        void RestoreSprint(Sprint sprint)
+        {
+            // If there's a current sprint, archive it first
+            if (currentSprint.Value != null)
+            {
+                archivedSprints.Set(archivedSprints.Value.Add(currentSprint.Value));
+            }
+
+            // Remove the sprint from archives and make it current
+            archivedSprints.Set(archivedSprints.Value.Remove(sprint));
+            currentSprint.Set(sprint);
+        }
+
+        return Layout.Vertical(
+            Text.H2("Sprint Archive"),
+
+            archivedSprints.Value.Length == 0 ?
+                new Card(
+                    Text.P("No archived sprints yet. Archive a sprint from the Backlog tab to see it here.")
+                ) :
+                Layout.Vertical(
+                    archivedSprints.Value
+                        .OrderByDescending(s => s.Id)
+                        .Select(sprint =>
+                        {
+                            var sprintItems = backlogItems.Value
+                                .Where(item => sprint.ItemIds.Contains(item.Id))
+                                .ToArray();
+
+                            var completedItems = sprintItems.Where(item => item.Status == ItemStatus.Done).Count();
+                            var totalPoints = sprintItems.Sum(item => item.StoryPoints);
+                            var completedPoints = sprintItems.Where(item => item.Status == ItemStatus.Done).Sum(item => item.StoryPoints);
+
+                            return new Card(
+                                Layout.Vertical(
+                                    Layout.Horizontal(
+                                        Layout.Vertical(
+                                            Text.H3($"{sprint.Name}"),
+                                            !string.IsNullOrEmpty(sprint.Goal) ?
+                                                Text.P($"Goal: {sprint.Goal}") : null,
+                                            Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}")
+                                        ).Width(Size.Grow()),
+                                        new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary()
+                                    ),
+
+                                    Layout.Horizontal(
+                                        new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
+                                        new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
+                                    ).Gap(4),
+
+                                    // Display sprint items
+                                    sprintItems.Length > 0 ?
+                                        Layout.Vertical(
+                                            Text.H4("Sprint Items:"),
+                                            Layout.Vertical(
+                                                sprintItems
+                                                    .OrderBy(item => item.Id)
+                                                    .Select(item => new Card(
+                                                        Layout.Horizontal(
+                                                            GetIssueTypeBadge(item.Type),
+                                                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
+                                                                $"{item.Title} - {item.Description}" : item.Title)
+                                                                .Width(Size.Grow()),
+                                                            new Badge(item.Status.ToString()).Secondary(),
+                                                            new Badge($"{item.StoryPoints} pts").Primary()
+                                                        )
+                                                    ))
+                                                    .ToArray()
+                                            ).Gap(2)
+                                        ).Gap(4) :
+                                        Text.P("No items in this sprint.")
+                                ).Gap(4)
+                            );
+                        })
+                        .ToArray()
+                ).Gap(12)
+        );
     }
 }
