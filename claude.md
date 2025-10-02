@@ -10,81 +10,173 @@
 ## Overview
 Build a backlog/sprint planning board application using the Ivy Framework with in-memory state management. Data will persist during the session but reset on app restart.
 
-## Implementation Steps
+## Current Architecture
+The app uses a three-tab layout:
+1. **Backlog Tab**: Manage product backlog items and sprints
+2. **Sprint Board Tab**: Kanban-style board for active sprint
+3. **Sprint Archive Tab**: View and restore archived sprints
 
-### Phase 1: Core Data Models & Foundation
-1. **Create core data models as C# records**
-   - `BacklogItem` (Id, Title, Description, StoryPoints, Priority, Status, Type)
-   - `Sprint` (Id, Name, StartDate, EndDate, Goal, Items)
-   - `Developer` (Id, Name, Capacity)
-   - `IssueType` enum (Task, Bug, Story, Epic)
-   - Use ImmutableArray for collections to work with UseState
+## Implementation Status
 
-2. **Set up main app structure**
-   - Dashboard with navigation tabs
-   - Backlog view, Sprint Board view
-   - Use TabsLayout for navigation
+### ✅ Phase 1: Core Data Models & Foundation (COMPLETED)
+**Data Models:**
+- `BacklogItem` (Id, Title, Description, StoryPoints, Priority, Status, Type, SprintId)
+- `Sprint` (Id, Name, StartDate, EndDate, Goal, ItemIds)
+- `Developer` (Id, Name, Capacity) - for future use
+- `ItemStatus` enum (Backlog, Todo, InProgress, Review, Done)
+- `IssueType` enum (Task, Bug, Story, Epic)
 
-### Phase 2: Backlog Management
-3. **Implement backlog state management**
-   - UseState<ImmutableArray<BacklogItem>> for backlog items
-   - Add/edit/delete operations updating immutable state
-   - Auto-increment ID generation
+**App Structure:**
+- Three-tab layout using TabsLayout
+- Shared state management across tabs using UseState
+- ImmutableArray for collections
 
-4. **Create backlog UI**
-   - Single-line card-based story display with issue type badges
-   - Add new story form using TextInput, NumberInput, and SelectInput for issue type
-   - Sprint management: Add/Remove items to/from current sprint
-   - Story point indicators and color-coded issue type badges
-   - Issue types: Task (gray), Bug (red), Story (blue), Epic (outline)
+### ✅ Phase 2: Backlog Management (COMPLETED)
+**State Management:**
+- UseState<ImmutableArray<BacklogItem>> for backlog items
+- UseState<Sprint> for current sprint
+- UseState<ImmutableArray<Sprint>> for archived sprints
+- Auto-increment ID generation
 
-## ✅ Completed Enhancements (Phase 2+)
-- **Issue Type Classification**: Dropdown selection for Task, Bug, Story, Epic with color-coded badges
-- **Sprint Management**: Create sprints and add/remove backlog items to/from current sprint
-- **Backlog Operations**: Add items to sprint with "Add to Sprint" button, remove with "Remove from Sprint"
-- **Enhanced UI**: Single-line cards with multiple badges and action buttons
-- **Form Validation**: Required fields and story point limits (1-21)
-- **Compact Layout**: Optimized single-line item display with minimal spacing
+**UI Features:**
+- ✅ FloatingPanel modal for adding backlog items
+- ✅ Single-line card-based display with issue type badges
+- ✅ Color-coded badges: Task (gray), Bug (red), Story (blue), Epic (outline)
+- ✅ Sprint creation and management
+- ✅ Add/Remove items to/from current sprint
+- ✅ Story point indicators (1-21 validation)
+- ✅ Delete backlog items
 
-### Phase 3: Sprint Board (Jira-style Active Sprint)
-5. **Create sprint board layout**
-   - Three-column Kanban board: "To Do" | "In Progress" | "Done"
-   - Items automatically appear in "To Do" when added to sprint from backlog
-   - Sprint board items can move between columns using status buttons
-   - Real-time updates using UseState triggers
+### ✅ Phase 3: Sprint Board (Jira-style Active Sprint) (COMPLETED)
+**Kanban Board:**
+- ✅ Three-column layout: "To Do" | "In Progress" | "Done"
+- ✅ Items automatically appear in "To Do" when added to sprint
+- ✅ Bidirectional status movement with buttons:
+  - To Do → "Start" → In Progress
+  - In Progress → "← Reverse" (red/destructive) or "Complete" → Done
+  - Done → "← Reverse" (red/destructive) → In Progress
+- ✅ Real-time updates using UseState triggers
+- ✅ Archive Sprint button on Sprint Board tab
 
-6. **Sprint board functionality**
-   - Sprint items display with issue type, title, description, story points
-   - Status progression: To Do → In Progress → Done
-   - Move items between columns with action buttons
-   - Items remain in sprint throughout their lifecycle
+**Sprint Board Features:**
+- ✅ Display issue type, title, description, story points
+- ✅ Move items forward and backward through workflow
+- ✅ Sprint summary with item counts by status
 
-### Phase 5: Basic Reporting
-8. **Simple metrics dashboard**
-   - Story count by status
-   - Total story points in sprint vs completed
-   - Basic progress indicators
+### ✅ Phase 3.5: Sprint Archive (COMPLETED)
+**Archive Features:**
+- ✅ Archive current sprint from Backlog or Sprint Board tabs
+- ✅ View all archived sprints with statistics:
+  - Completion metrics (items completed, story points completed)
+  - Sprint duration and goals
+  - All items with final status
+- ✅ **Restore Sprint**: Click "Make Current Sprint" on any archived sprint
+  - Automatically archives current sprint if one exists
+  - Makes selected sprint the active sprint
+  - Allows switching between sprints without losing data
 
-### Phase 6: Enhanced Features
-9. **Add polish and usability**
-   - Search and filter functionality
-   - Export data as JSON using UseDownload
-   - Import data from JSON files
-   - Theme support and responsive design
+### 🚧 Phase 4: Hierarchical Epic Structure (PLANNED - NEXT)
+**Goal:** Enforce proper Agile hierarchy: Epic → Story → Task/Bug
+
+**Changes Required:**
+1. **Add Hierarchy to Data Model:**
+   - Add `ParentId` (int?) to BacklogItem for parent-child relationships
+   - Epics have no parent
+   - Stories have Epic as parent
+   - Tasks/Bugs have Story as parent
+
+2. **Modify Product Backlog Tab:**
+   - Default view: List of Epics only
+   - "Add Epic" button (modal restricted to Epic type only)
+   - Each Epic card shows:
+     - Epic details (title, description, story points)
+     - Number of child Stories
+     - Progress indicators
+     - "Open Epic" button
+
+3. **Epic Detail View:**
+   - Breadcrumb: "Backlog > [Epic Name]"
+   - "Back to Backlog" button
+   - List of Stories within this Epic
+   - "Add Story" button (modal restricted to Story type only)
+   - Each Story card shows:
+     - Story details
+     - Number of child Tasks/Bugs
+     - "Open Story" button
+
+4. **Story Detail View:**
+   - Breadcrumb: "Backlog > [Epic Name] > [Story Name]"
+   - "Back to Epic" button
+   - List of Tasks and Bugs within this Story
+   - "Add Task/Bug" button (modal restricted to Task or Bug types only)
+
+5. **Implementation Approach:**
+   - Add `UseState<BacklogItem?>` for currently opened Epic
+   - Add `UseState<BacklogItem?>` for currently opened Story
+   - Conditionally render based on state:
+     ```
+     if (openedStory != null) → Show Story Detail View
+     else if (openedEpic != null) → Show Epic Detail View
+     else → Show Epic List View
+     ```
+   - Update modal to filter issue type options based on context
+   - Add breadcrumb navigation component
+
+**Benefits:**
+- Enforces proper work breakdown structure
+- Better organization of large features
+- Clearer hierarchy: Epic (feature) → Story (user story) → Task/Bug (implementation)
+- Easier epic progress tracking
+- Aligns with standard Agile/Scrum practices
+
+### Phase 5: Basic Reporting (FUTURE)
+- Story count by status
+- Total story points in sprint vs completed
+- Epic progress tracking
+- Velocity charts
+
+### Phase 6: Enhanced Features (FUTURE)
+- Search and filter functionality
+- Export data as JSON using UseDownload
+- Import data from JSON files
+- Theme support and responsive design
+- Developer assignment and capacity tracking
 
 ## Technical Implementation Details
 
-- **State Management**: All data stored in UseState hooks at app level
-- **Data Flow**: Pass state and update functions down to child components
-- **Persistence**: None initially - pure in-memory (can add localStorage later)
-- **UI**: Ivy widgets (Card, Button, Layout, TextInput, NumberInput, Badge)
-- **Navigation**: TabsLayout for main sections
+**State Management:**
+- All data stored in UseState hooks at app level
+- Pass state and update functions down to child components
+- ImmutableArray for all collections to work with Ivy's reactivity
 
-## Key Benefits of This Approach
+**UI Components:**
+- FloatingPanel for modal dialogs
+- Card for item display
+- Button with variants: Primary, Secondary, Destructive, Outline
+- Badge with variants: Primary, Secondary, Destructive, Outline
+- Layout (Vertical, Horizontal) for structure
+- TextInput, NumberInput, SelectInput for forms
 
-- **Quick to implement**: No database setup or configuration
-- **Easy to test**: Immediate feedback and changes
-- **Portable**: Works anywhere without dependencies
-- **Evolutionary**: Can add persistence layer later without major refactoring
+**Navigation:**
+- TabsLayout for main sections
+- Conditional rendering for hierarchical navigation
+- State-based view switching
 
-This approach lets us focus on the core functionality and user experience first, then add persistence when the app structure is solid.
+**Persistence:**
+- Pure in-memory (session-based)
+- Can add localStorage or database later without major refactoring
+
+## Key Design Decisions
+
+1. **Three-tab structure** separates concerns:
+   - Backlog: Planning and organization
+   - Sprint Board: Active work execution
+   - Sprint Archive: Historical tracking
+
+2. **Bidirectional workflow** allows error correction and reopening work
+
+3. **Sprint archive/restore** enables sprint comparison and switching
+
+4. **Hierarchical Epic structure** (next phase) enforces proper Agile breakdown
+
+5. **In-memory state** keeps implementation simple, focusing on UX first
