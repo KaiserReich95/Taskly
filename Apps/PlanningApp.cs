@@ -20,9 +20,7 @@ public class PlanningApp : ViewBase
 
     public override object? Build()
     {
-        var selectedTab = UseState(0);
-
-        // Shared state management for all tabs
+        // Shared state management
         var backlogItems = UseState(ImmutableArray<BacklogItem>.Empty);
         var currentSprint = UseState(() => (Sprint)null!);
         var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
@@ -37,17 +35,44 @@ public class PlanningApp : ViewBase
         var currentSprintReceiver = Context.UseSignal<CurrentSprintSignal, Sprint, bool>();
         var archivedSprintsReceiver = Context.UseSignal<ArchivedSprintsSignal, ImmutableArray<Sprint>, bool>();
 
-        return Layout.Vertical(
-            Text.H1("Taskly - Backlog & Sprint Planning"),
-            new TabsLayout(
-                onSelect: e => { selectedTab.Set(e.Value); return ValueTask.CompletedTask; },
-                onClose: null,
-                onRefresh: null,
-                onReorder: null,
-                selectedIndex: selectedTab.Value,
-                new Tab("Backlog", BuildBacklogView(backlogItems, currentSprint, archivedSprints, backlogItemsSignal, currentSprintSignal, archivedSprintsSignal))
-            )
-        );
+        // Receive updates from other apps
+        UseEffect(() => backlogItemsReceiver.Receive(value =>
+        {
+            backlogItems.Set(value);
+            return true;
+        }));
+
+        UseEffect(() => currentSprintReceiver.Receive(value =>
+        {
+            currentSprint.Set(value);
+            return true;
+        }));
+
+        UseEffect(() => archivedSprintsReceiver.Receive(value =>
+        {
+            archivedSprints.Set(value);
+            return true;
+        }));
+
+        // Send state updates via signals whenever state changes
+        UseEffect(() =>
+        {
+            Console.WriteLine($"PlanningApp sending {backlogItems.Value.Length} backlog items via signal");
+            _ = backlogItemsSignal.Send(backlogItems.Value);
+        });
+
+        UseEffect(() =>
+        {
+            Console.WriteLine($"PlanningApp sending sprint '{currentSprint.Value?.Name}' with {currentSprint.Value?.ItemIds.Length ?? 0} items via signal");
+            _ = currentSprintSignal.Send(currentSprint.Value);
+        });
+
+        UseEffect(() =>
+        {
+            _ = archivedSprintsSignal.Send(archivedSprints.Value);
+        });
+
+        return BuildBacklogView(backlogItems, currentSprint, archivedSprints, backlogItemsSignal, currentSprintSignal, archivedSprintsSignal);
     }
 
     private object BuildBacklogView(
@@ -234,6 +259,9 @@ public class PlanningApp : ViewBase
                         )
                     ) : null,
 
+                // Sprint management section
+                BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
+
                 BuildStoryDetailView(openedStory.Value, openedEpic.Value!, backlogItems, openedEpic, openedStory, currentSprint, isAddItemModalOpen)
             ) :
         openedEpic.Value != null ?
@@ -282,7 +310,10 @@ public class PlanningApp : ViewBase
                         )
                     ) : null,
 
-                BuildEpicDetailView(openedEpic.Value, backlogItems, openedEpic, openedStory, currentSprint, isAddItemModalOpen, addTaskToStory, newIssueType)
+                // Sprint management section
+                BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
+
+                BuildEpicDetailView(openedEpic.Value, backlogItems, openedEpic, openedStory, currentSprint, isAddItemModalOpen, addTaskToStory, newIssueType, backlogItemsSignal, currentSprintSignal)
             ) :
             // EPIC LIST VIEW: Show all Epics with Sprint Management
             Layout.Vertical(
@@ -307,56 +338,69 @@ public class PlanningApp : ViewBase
                         )
                     ) : null,
 
-                    // Sprint management section (only shown at Epic List level)
-                    currentSprint.Value == null ?
-                        new Card(
-                            Layout.Vertical(
-                                Text.H3("Create New Sprint"),
-                                newSprintName.ToTextInput().Placeholder("Sprint name (e.g., Sprint 1)"),
-                                newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
-                                new Button("Create Sprint", CreateSprint).Primary()
-                            )
-                        ) :
-                        new Card(
-                            Layout.Vertical(
-                                Layout.Horizontal(
-                                    Layout.Vertical(
-                                        Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
-                                        !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                            Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                                        Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
-                                    ).Width(Size.Grow()),
-                                    new Button("Archive Sprint", ArchiveSprint).Secondary()
-                                ),
-
-                                // Display sprint items
-                                currentSprint.Value.ItemIds.Length > 0 ?
-                                    Layout.Vertical(
-                                        Text.H4("Sprint Items:"),
-                                        Layout.Vertical(
-                                            backlogItems.Value
-                                                .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
-                                                .OrderBy(x => x.Id)
-                                                .Select(item => new Card(
-                                                    Layout.Horizontal(
-                                                        GetIssueTypeBadge(item.Type),
-                                                        Text.Strong(!string.IsNullOrEmpty(item.Description) ?
-                                                            $"{item.Title} - {item.Description}" : item.Title)
-                                                            .Width(Size.Grow()),
-                                                        new Badge(item.Status.ToString()).Secondary(),
-                                                        new Badge($"{item.StoryPoints} pts").Primary(),
-                                                        new Button("Remove from Sprint", () => RemoveItemFromSprint(item.Id)).Secondary().Small()
-                                                    )
-                                                ))
-                                                .ToArray()
-                                        ).Gap(4)
-                                    ).Gap(4) :
-                                    Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
-                            ).Gap(4)
-                        ),
+                    // Sprint management section
+                    BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
 
                     BuildEpicListViewSection(backlogItems, openedEpic, currentSprint)
                 );
+    }
+
+    // Sprint management section - shown in all views
+    private object BuildSprintManagementSection(
+        IState<Sprint> currentSprint,
+        IState<ImmutableArray<BacklogItem>> backlogItems,
+        IState<string> newSprintName,
+        IState<string> newSprintGoal,
+        Func<Event<Button>, ValueTask> createSprint,
+        Action archiveSprint,
+        Action<int> removeItemFromSprint)
+    {
+        return currentSprint.Value == null ?
+            new Card(
+                Layout.Vertical(
+                    Text.H3("Create New Sprint"),
+                    newSprintName.ToTextInput().Placeholder("Sprint name (e.g., Sprint 1)"),
+                    newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
+                    new Button("Create Sprint", createSprint).Primary()
+                )
+            ) :
+            new Card(
+                Layout.Vertical(
+                    Layout.Horizontal(
+                        Layout.Vertical(
+                            Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
+                            !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                                Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                            Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
+                        ).Width(Size.Grow()),
+                        new Button("Archive Sprint", archiveSprint).Secondary()
+                    ),
+
+                    // Display sprint items
+                    currentSprint.Value.ItemIds.Length > 0 ?
+                        Layout.Vertical(
+                            Text.H4("Sprint Items:"),
+                            Layout.Vertical(
+                                backlogItems.Value
+                                    .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
+                                    .OrderBy(x => x.Id)
+                                    .Select(item => new Card(
+                                        Layout.Horizontal(
+                                            GetIssueTypeBadge(item.Type),
+                                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
+                                                $"{item.Title} - {item.Description}" : item.Title)
+                                                .Width(Size.Grow()),
+                                            new Badge(item.Status.ToString()).Secondary(),
+                                            new Badge($"{item.StoryPoints} pts").Primary(),
+                                            new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Secondary().Small()
+                                        )
+                                    ))
+                                    .ToArray()
+                            ).Gap(4)
+                        ).Gap(4) :
+                        Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
+                ).Gap(4)
+            );
     }
 
     // EPIC LIST VIEW: Shows only Epics (top-level items)
@@ -364,45 +408,6 @@ public class PlanningApp : ViewBase
     {
         // Get only Epics (items with no parent)
         var epics = backlogItems.Value.Where(item => item.Type == IssueType.Epic && item.ParentId == null).ToArray();
-
-        // Helper to add/remove epic items from sprint
-        void AddItemToSprint(int itemId)
-        {
-            if (currentSprint.Value != null)
-            {
-                var updatedItems = backlogItems.Value
-                    .Select(item => item.Id == itemId ?
-                        item with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id } : item)
-                    .ToImmutableArray();
-
-                var updatedSprint = currentSprint.Value with
-                {
-                    ItemIds = currentSprint.Value.ItemIds.Add(itemId)
-                };
-
-                backlogItems.Set(updatedItems);
-                currentSprint.Set(updatedSprint);
-            }
-        }
-
-        void RemoveItemFromSprint(int itemId)
-        {
-            if (currentSprint.Value != null)
-            {
-                var updatedItems = backlogItems.Value
-                    .Select(item => item.Id == itemId ?
-                        item with { Status = ItemStatus.Backlog, SprintId = null } : item)
-                    .ToImmutableArray();
-
-                var updatedSprint = currentSprint.Value with
-                {
-                    ItemIds = currentSprint.Value.ItemIds.Remove(itemId)
-                };
-
-                backlogItems.Set(updatedItems);
-                currentSprint.Set(updatedSprint);
-            }
-        }
 
         void DeleteItem(int id)
         {
@@ -437,20 +442,8 @@ public class PlanningApp : ViewBase
                                     // Story points
                                     new Badge($"{epic.StoryPoints} pts").Primary(),
 
-                                    // Sprint status
-                                    isInSprint ?
-                                        new Badge("In Sprint").Secondary() :
-                                        new Badge("Backlog").Outline(),
-
                                     // Open Epic button
                                     new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
-
-                                    // Sprint management
-                                    !isInSprint && currentSprint.Value != null ?
-                                        new Button("Add to Sprint", () => AddItemToSprint(epic.Id)).Primary().Small() :
-                                    isInSprint ?
-                                        new Button("Remove from Sprint", () => RemoveItemFromSprint(epic.Id)).Secondary().Small() :
-                                    null,
 
                                     // Delete button
                                     new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
@@ -462,7 +455,7 @@ public class PlanningApp : ViewBase
     }
 
     // EPIC DETAIL VIEW: Shows Stories within an Epic
-    private object BuildEpicDetailView(BacklogItem epic, IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<BacklogItem?> openedStory, IState<Sprint> currentSprint, IState<bool> isAddItemModalOpen, IState<BacklogItem?> addTaskToStory, IState<IssueType> newIssueType)
+    private object BuildEpicDetailView(BacklogItem epic, IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<BacklogItem?> openedStory, IState<Sprint> currentSprint, IState<bool> isAddItemModalOpen, IState<BacklogItem?> addTaskToStory, IState<IssueType> newIssueType, ISignalSender<ImmutableArray<BacklogItem>, bool> backlogItemsSignal, ISignalSender<Sprint, bool> currentSprintSignal)
     {
         // Get Stories that belong to this Epic
         var stories = backlogItems.Value.Where(item => item.ParentId == epic.Id && item.Type == IssueType.Story).ToArray();
@@ -472,22 +465,49 @@ public class PlanningApp : ViewBase
             backlogItems.Set(backlogItems.Value.Where(item => item.Id != id).ToImmutableArray());
         }
 
-        void AddItemToSprint(int itemId)
+        async void AddItemToSprint(int itemId)
         {
             if (currentSprint.Value != null)
             {
-                var updatedItems = backlogItems.Value
+                // When adding a Story to sprint, also update status of all its child Tasks/Bugs to Todo
+                var itemToAdd = backlogItems.Value.FirstOrDefault(i => i.Id == itemId);
+
+                Console.WriteLine($"Adding item {itemId} ({itemToAdd?.Title}) to sprint {currentSprint.Value.Name}");
+
+                var updatedItems = backlogItems.Value;
+
+                // Update the story status
+                updatedItems = updatedItems
                     .Select(item => item.Id == itemId ?
                         item with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id } : item)
                     .ToImmutableArray();
+
+                // If it's a Story, also update all its child Tasks/Bugs to Todo status
+                if (itemToAdd?.Type == IssueType.Story)
+                {
+                    var childTasks = updatedItems.Where(item => item.ParentId == itemId).ToArray();
+                    Console.WriteLine($"Story has {childTasks.Length} child tasks/bugs");
+
+                    updatedItems = updatedItems
+                        .Select(item => item.ParentId == itemId ?
+                            item with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id } : item)
+                        .ToImmutableArray();
+                }
 
                 var updatedSprint = currentSprint.Value with
                 {
                     ItemIds = currentSprint.Value.ItemIds.Add(itemId)
                 };
 
+                Console.WriteLine($"Sprint now has {updatedSprint.ItemIds.Length} items");
+
                 backlogItems.Set(updatedItems);
                 currentSprint.Set(updatedSprint);
+
+                // Send signals immediately after updating state
+                Console.WriteLine($"Sending {updatedItems.Length} items and sprint with {updatedSprint.ItemIds.Length} items via signals");
+                await backlogItemsSignal.Send(updatedItems);
+                await currentSprintSignal.Send(updatedSprint);
             }
         }
 
@@ -495,10 +515,25 @@ public class PlanningApp : ViewBase
         {
             if (currentSprint.Value != null)
             {
-                var updatedItems = backlogItems.Value
+                // When removing a Story from sprint, also update status of all its child Tasks/Bugs back to Backlog
+                var itemToRemove = backlogItems.Value.FirstOrDefault(i => i.Id == itemId);
+
+                var updatedItems = backlogItems.Value;
+
+                // Update the story status
+                updatedItems = updatedItems
                     .Select(item => item.Id == itemId ?
                         item with { Status = ItemStatus.Backlog, SprintId = null } : item)
                     .ToImmutableArray();
+
+                // If it's a Story, also update all its child Tasks/Bugs back to Backlog status
+                if (itemToRemove?.Type == IssueType.Story)
+                {
+                    updatedItems = updatedItems
+                        .Select(item => item.ParentId == itemId ?
+                            item with { Status = ItemStatus.Backlog, SprintId = null } : item)
+                        .ToImmutableArray();
+                }
 
                 var updatedSprint = currentSprint.Value with
                 {
@@ -584,14 +619,6 @@ public class PlanningApp : ViewBase
                                                             $"{task.Title} - {task.Description}" : task.Title)
                                                             .Width(Size.Grow()),
                                                         new Badge($"{task.StoryPoints} pts").Primary(),
-                                                        taskInSprint ?
-                                                            new Badge("In Sprint").Secondary() :
-                                                            new Badge("Backlog").Outline(),
-                                                        !taskInSprint && currentSprint.Value != null ?
-                                                            new Button("Add to Sprint", () => AddItemToSprint(task.Id)).Primary().Small() :
-                                                        taskInSprint ?
-                                                            new Button("Remove from Sprint", () => RemoveItemFromSprint(task.Id)).Secondary().Small() :
-                                                        null,
                                                         new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
                                                     )
                                                 );
@@ -614,44 +641,6 @@ public class PlanningApp : ViewBase
         void DeleteItem(int id)
         {
             backlogItems.Set(backlogItems.Value.Where(item => item.Id != id).ToImmutableArray());
-        }
-
-        void AddItemToSprint(int itemId)
-        {
-            if (currentSprint.Value != null)
-            {
-                var updatedItems = backlogItems.Value
-                    .Select(item => item.Id == itemId ?
-                        item with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id } : item)
-                    .ToImmutableArray();
-
-                var updatedSprint = currentSprint.Value with
-                {
-                    ItemIds = currentSprint.Value.ItemIds.Add(itemId)
-                };
-
-                backlogItems.Set(updatedItems);
-                currentSprint.Set(updatedSprint);
-            }
-        }
-
-        void RemoveItemFromSprint(int itemId)
-        {
-            if (currentSprint.Value != null)
-            {
-                var updatedItems = backlogItems.Value
-                    .Select(item => item.Id == itemId ?
-                        item with { Status = ItemStatus.Backlog, SprintId = null } : item)
-                    .ToImmutableArray();
-
-                var updatedSprint = currentSprint.Value with
-                {
-                    ItemIds = currentSprint.Value.ItemIds.Remove(itemId)
-                };
-
-                backlogItems.Set(updatedItems);
-                currentSprint.Set(updatedSprint);
-            }
         }
 
         return Layout.Vertical(
@@ -696,17 +685,6 @@ public class PlanningApp : ViewBase
                                         .Width(Size.Grow()),
 
                                     new Badge($"{task.StoryPoints} pts").Primary(),
-
-                                    isInSprint ?
-                                        new Badge("In Sprint").Secondary() :
-                                        new Badge("Backlog").Outline(),
-
-                                    !isInSprint && currentSprint.Value != null ?
-                                        new Button("Add to Sprint", () => AddItemToSprint(task.Id)).Primary().Small() :
-                                    isInSprint ?
-                                        new Button("Remove from Sprint", () => RemoveItemFromSprint(task.Id)).Secondary().Small() :
-                                    null,
-
                                     new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
                                 )
                             );
