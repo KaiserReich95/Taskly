@@ -1,5 +1,6 @@
 namespace Taskly.Apps;
 using Taskly.Models;
+using Taskly.Database;
 using Taskly.Connections;
 
 [App(icon: Icons.Kanban)]
@@ -7,79 +8,128 @@ public class SprintBoardApp : ViewBase
 {
     public override object Build()
     {
-        // Local state that will be updated by signals
-        var lastBacklogItems = UseState(ImmutableArray<BacklogItem>.Empty);
+        // Local state loaded from database
         var backlogItems = UseState(ImmutableArray<BacklogItem>.Empty);
         var currentSprint = UseState<Sprint>(() => null!);
         var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
+        var isLoading = UseState(true);
 
-        // Use signal receivers to get state from Taskly app (Server broadcast allows cross-app access)
-        var backlogItemsReceiver = Context.UseSignal<BacklogItemsSignal, ImmutableArray<BacklogItem>, bool>();
-        var currentSprintReceiver = Context.UseSignal<CurrentSprintSignal, Sprint, bool>();
-        var archivedSprintsReceiver = Context.UseSignal<ArchivedSprintsSignal, ImmutableArray<Sprint>, bool>();
+        // Listen for refresh signals from other apps
+        var refreshReceiver = Context.UseSignal<RefreshDataSignal, bool, bool>();
 
-        // Receive state updates from Taskly app
-        UseEffect(() => backlogItemsReceiver.Receive(backlogItems =>
+        UseEffect(() => refreshReceiver.Receive(value =>
         {
-            Console.WriteLine($"Received {backlogItems.Length} backlog items");
-
-            lastBacklogItems.Set(backlogItems);
+            Console.WriteLine("SprintBoard: Received refresh signal, reloading from database...");
+            _ = ReloadData(); // Fire and forget
             return true;
         }));
 
-        UseEffect(() => currentSprintReceiver.Receive(value =>
+        // Load data from database on mount
+        UseEffect(async () =>
         {
-            Console.WriteLine($"SprintBoard received sprint: {value?.Name} with {value?.ItemIds.Length ?? 0} items");
-            currentSprint.Set(value);
-            return true;
-        }));
+            try
+            {
+                Console.WriteLine("SprintBoard loading data from database...");
 
-        UseEffect(() => archivedSprintsReceiver.Receive(value =>
+                // Load backlog items
+                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
+                backlogItems.Set(items);
+                Console.WriteLine($"Loaded {items.Length} backlog items");
+
+                // Load current sprint
+                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                if (currentSprintModel != null)
+                {
+                    currentSprint.Set(currentSprintModel.ToSprint());
+                    Console.WriteLine($"Loaded current sprint: {currentSprintModel.Name}");
+                }
+
+                // Load archived sprints
+                var allSprints = await InitDatabase.GetAllSprints();
+                var archived = allSprints
+                    .Where(s => s.IsArchived)
+                    .Select(s => s.ToSprint())
+                    .ToImmutableArray();
+                archivedSprints.Set(archived);
+
+                isLoading.Set(false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading data: {ex.Message}");
+                isLoading.Set(false);
+            }
+        });
+
+        // Helper to reload data from database
+        async Task ReloadData()
         {
-            archivedSprints.Set(value);
-            return true;
-        }));
+            try
+            {
+                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
+                backlogItems.Set(items);
 
-        // Create signal senders to send updates back to Taskly app
-        var backlogItemsSender = Context.CreateSignal<BacklogItemsSignal, ImmutableArray<BacklogItem>, bool>();
-        var currentSprintSender = Context.CreateSignal<CurrentSprintSignal, Sprint, bool>();
-        var archivedSprintsSender = Context.CreateSignal<ArchivedSprintsSignal, ImmutableArray<Sprint>, bool>();
+                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                if (currentSprintModel != null)
+                {
+                    currentSprint.Set(currentSprintModel.ToSprint());
+                }
+                else
+                {
+                    currentSprint.Set((Sprint)null!);
+                }
 
-        // Helper method to update item status and send back via signal
+                var allSprints = await InitDatabase.GetAllSprints();
+                var archived = allSprints
+                    .Where(s => s.IsArchived)
+                    .Select(s => s.ToSprint())
+                    .ToImmutableArray();
+                archivedSprints.Set(archived);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reloading data: {ex.Message}");
+            }
+        }
+
+        // Helper method to update item status in database
         async void UpdateItemStatus(int id, ItemStatus newStatus)
         {
-            var updatedItems = lastBacklogItems.Value
-                .Select(item => item.Id == id ? item with { Status = newStatus } : item)
-                .ToImmutableArray();
-
-            lastBacklogItems.Set(updatedItems);
-            await backlogItemsSender.Send(updatedItems);
+            var item = backlogItems.Value.FirstOrDefault(i => i.Id == id);
+            if (item != null)
+            {
+                var updated = item with { Status = newStatus };
+                await InitDatabase.UpdateBacklogItem(updated.ToBacklogItemModel());
+                await ReloadData();
+            }
         }
 
         async void ArchiveSprint()
         {
             if (currentSprint.Value != null)
             {
-                // Add current sprint to archived sprints
-                var updatedArchived = archivedSprints.Value.Add(currentSprint.Value);
-                archivedSprints.Set(updatedArchived);
-                await archivedSprintsSender.Send(updatedArchived);
-
-                // Clear current sprint
-                Sprint? nullSprint = null;
-                currentSprint.Set(nullSprint!);
-                await currentSprintSender.Send(nullSprint!);
+                // Archive the sprint in database
+                var sprintModel = currentSprint.Value.ToSprintModel(isArchived: true);
+                await InitDatabase.UpdateSprint(sprintModel);
+                await ReloadData();
             }
         }
 
+        if (isLoading.Value)
+        {
+            return new Card(Text.P("Loading..."));
+        }
+
         // Get all items in sprint (stories only, since only stories are added to sprints)
-        var sprintStories = lastBacklogItems.Value.Where(item =>
+        var sprintStories = backlogItems.Value.Where(item =>
             currentSprint.Value != null &&
             currentSprint.Value.ItemIds.Contains(item.Id) &&
             item.Type == IssueType.Story).ToImmutableArray();
 
         // Get all tasks/bugs that belong to stories in the sprint
-        var allTasks = lastBacklogItems.Value.Where(item =>
+        var allTasks = backlogItems.Value.Where(item =>
             (item.Type == IssueType.Task || item.Type == IssueType.Bug) &&
             sprintStories.Any(story => story.Id == item.ParentId)).ToImmutableArray();
 
@@ -135,7 +185,7 @@ public class SprintBoardApp : ViewBase
                 Layout.Vertical(
                     epicGroups.Select(epicGroup =>
                     {
-                        var epic = lastBacklogItems.Value.FirstOrDefault(e => e.Id == epicGroup.Key);
+                        var epic = backlogItems.Value.FirstOrDefault(e => e.Id == epicGroup.Key);
                         var stories = epicGroup.ToArray();
 
                         return new Card(

@@ -1,5 +1,6 @@
 namespace Taskly.Apps;
 using Taskly.Models;
+using Taskly.Database;
 using Taskly.Connections;
 
 [App(icon: Icons.Archive)]
@@ -7,56 +8,110 @@ public class SprintArchiveApp : ViewBase
 {
     public override object Build()
     {
-        // Local state that will be updated by signals
+        // Local state loaded from database
         var backlogItems = UseState(ImmutableArray<BacklogItem>.Empty);
         var currentSprint = UseState<Sprint>(() => null!);
         var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
+        var isLoading = UseState(true);
 
-        // Use signal receivers to get state from Taskly app
-        var backlogItemsReceiver = Context.UseSignal<BacklogItemsSignal, ImmutableArray<BacklogItem>, bool>();
-        var currentSprintReceiver = Context.UseSignal<CurrentSprintSignal, Sprint, bool>();
-        var archivedSprintsReceiver = Context.UseSignal<ArchivedSprintsSignal, ImmutableArray<Sprint>, bool>();
+        // Listen for refresh signals from other apps
+        var refreshReceiver = Context.UseSignal<RefreshDataSignal, bool, bool>();
 
-        // Receive state updates from Taskly app
-        UseEffect(() => backlogItemsReceiver.Receive(value =>
+        UseEffect(() => refreshReceiver.Receive(value =>
         {
-            backlogItems.Set(value);
+            Console.WriteLine("SprintArchive: Received refresh signal, reloading from database...");
+            _ = ReloadData(); // Fire and forget
             return true;
         }));
 
-        UseEffect(() => currentSprintReceiver.Receive(value =>
+        // Load data from database on mount
+        UseEffect(async () =>
         {
-            currentSprint.Set(value);
-            return true;
-        }));
+            try
+            {
+                Console.WriteLine("SprintArchive loading data from database...");
 
-        UseEffect(() => archivedSprintsReceiver.Receive(value =>
+                // Load backlog items
+                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
+                backlogItems.Set(items);
+
+                // Load current sprint
+                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                if (currentSprintModel != null)
+                {
+                    currentSprint.Set(currentSprintModel.ToSprint());
+                }
+
+                // Load archived sprints
+                var allSprints = await InitDatabase.GetAllSprints();
+                var archived = allSprints
+                    .Where(s => s.IsArchived)
+                    .Select(s => s.ToSprint())
+                    .ToImmutableArray();
+                archivedSprints.Set(archived);
+
+                isLoading.Set(false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading data: {ex.Message}");
+                isLoading.Set(false);
+            }
+        });
+
+        // Helper to reload data from database
+        async Task ReloadData()
         {
-            archivedSprints.Set(value);
-            return true;
-        }));
+            try
+            {
+                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
+                backlogItems.Set(items);
 
-        // Create signal senders to send updates back to Taskly app
-        var currentSprintSender = Context.CreateSignal<CurrentSprintSignal, Sprint, bool>();
-        var archivedSprintsSender = Context.CreateSignal<ArchivedSprintsSignal, ImmutableArray<Sprint>, bool>();
+                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                if (currentSprintModel != null)
+                {
+                    currentSprint.Set(currentSprintModel.ToSprint());
+                }
+                else
+                {
+                    currentSprint.Set((Sprint)null!);
+                }
+
+                var allSprints = await InitDatabase.GetAllSprints();
+                var archived = allSprints
+                    .Where(s => s.IsArchived)
+                    .Select(s => s.ToSprint())
+                    .ToImmutableArray();
+                archivedSprints.Set(archived);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reloading data: {ex.Message}");
+            }
+        }
 
         async void RestoreSprint(Sprint sprint)
         {
             // If there's a current sprint, archive it first
             if (currentSprint.Value != null)
             {
-                var updatedArchived = archivedSprints.Value.Add(currentSprint.Value);
-                archivedSprints.Set(updatedArchived);
-                await archivedSprintsSender.Send(updatedArchived);
+                var currentModel = currentSprint.Value.ToSprintModel(isArchived: true);
+                await InitDatabase.UpdateSprint(currentModel);
             }
 
-            // Remove the sprint from archives and make it current
-            var newArchivedSprints = archivedSprints.Value.Remove(sprint);
-            archivedSprints.Set(newArchivedSprints);
-            currentSprint.Set(sprint);
+            // Unarchive the selected sprint and make it current
+            var restoredModel = sprint.ToSprintModel(isArchived: false);
+            await InitDatabase.UpdateSprint(restoredModel);
 
-            await archivedSprintsSender.Send(newArchivedSprints);
-            await currentSprintSender.Send(sprint);
+            // Reload data
+            await ReloadData();
+        }
+
+        if (isLoading.Value)
+        {
+            return new Card(Text.P("Loading..."));
         }
 
         Badge GetIssueTypeBadge(IssueType type)
