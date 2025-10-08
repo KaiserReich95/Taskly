@@ -2,11 +2,6 @@ namespace Taskly.Connections;
 
 using Taskly.Models;
 
+// Simple signal to notify other apps to refresh data from database
 [Signal(BroadcastType.Server)]
-public class BacklogItemsSignal : AbstractSignal<ImmutableArray<BacklogItem>, bool> { }
-
-[Signal(BroadcastType.Server)]
-public class CurrentSprintSignal : AbstractSignal<Sprint, bool> { }
-
-[Signal(BroadcastType.Server)]
-public class ArchivedSprintsSignal : AbstractSignal<ImmutableArray<Sprint>, bool> { }
+public class RefreshDataSignal : AbstractSignal<bool, bool> { }
