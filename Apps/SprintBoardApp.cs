@@ -29,6 +29,7 @@ public class SprintBoardApp : ViewBase
 
         UseEffect(() => currentSprintReceiver.Receive(value =>
         {
+            Console.WriteLine($"SprintBoard received sprint: {value?.Name} with {value?.ItemIds.Length ?? 0} items");
             currentSprint.Set(value);
             return true;
         }));
@@ -71,47 +72,139 @@ public class SprintBoardApp : ViewBase
             }
         }
 
-        // Get sprint items by status
-        var sprintItems = lastBacklogItems.Value.Where(item => currentSprint.Value != null &&
-            currentSprint.Value.ItemIds.Contains(item.Id)).ToImmutableArray();
+        // Get all items in sprint (stories only, since only stories are added to sprints)
+        var sprintStories = lastBacklogItems.Value.Where(item =>
+            currentSprint.Value != null &&
+            currentSprint.Value.ItemIds.Contains(item.Id) &&
+            item.Type == IssueType.Story).ToImmutableArray();
 
-        var todoItems = sprintItems.Where(item => item.Status == ItemStatus.Todo).ToArray();
-        var inProgressItems = sprintItems.Where(item => item.Status == ItemStatus.InProgress).ToArray();
-        var doneItems = sprintItems.Where(item => item.Status == ItemStatus.Done).ToArray();
+        // Get all tasks/bugs that belong to stories in the sprint
+        var allTasks = lastBacklogItems.Value.Where(item =>
+            (item.Type == IssueType.Task || item.Type == IssueType.Bug) &&
+            sprintStories.Any(story => story.Id == item.ParentId)).ToImmutableArray();
 
-        // Helper method to build sprint board item card
-        object BuildSprintBoardItemCard(BacklogItem item)
+        // Group tasks by status
+        var todoTasks = allTasks.Where(item => item.Status == ItemStatus.Todo).ToArray();
+        var inProgressTasks = allTasks.Where(item => item.Status == ItemStatus.InProgress).ToArray();
+        var doneTasks = allTasks.Where(item => item.Status == ItemStatus.Done).ToArray();
+
+        // Helper to build task/bug card
+        object BuildTaskCard(BacklogItem task)
         {
             return new Card(
                 Layout.Vertical(
                     // Header with issue type and title
                     Layout.Horizontal(
-                        GetIssueTypeBadge(item.Type),
-                        Text.Strong(item.Title).Width(Size.Grow())
+                        GetIssueTypeBadge(task.Type),
+                        Text.Strong(task.Title).Width(Size.Grow())
                     ),
 
                     // Description if available
-                    !string.IsNullOrEmpty(item.Description) ?
-                        Text.P(item.Description) : null,
+                    !string.IsNullOrEmpty(task.Description) ?
+                        Text.P(task.Description) : null,
 
                     // Footer with story points and action buttons
                     Layout.Horizontal(
-                        new Badge($"{item.StoryPoints} pts").Primary(),
+                        new Badge($"{task.StoryPoints} pts").Primary(),
 
-                        // Status progression buttons - forward and backward
-                        item.Status == ItemStatus.Todo ?
-                            new Button("Start", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Primary().Small() :
-                        item.Status == ItemStatus.InProgress ?
+                        // Status progression buttons
+                        task.Status == ItemStatus.Todo ?
+                            new Button("Start", () => UpdateItemStatus(task.Id, ItemStatus.InProgress)).Primary().Small() :
+                        task.Status == ItemStatus.InProgress ?
                             Layout.Horizontal(
-                                new Button("← Reverse", () => UpdateItemStatus(item.Id, ItemStatus.Todo)).Destructive().Small(),
-                                new Button("Complete", () => UpdateItemStatus(item.Id, ItemStatus.Done)).Primary().Small()
+                                new Button("← Reverse", () => UpdateItemStatus(task.Id, ItemStatus.Todo)).Destructive().Small(),
+                                new Button("Complete", () => UpdateItemStatus(task.Id, ItemStatus.Done)).Primary().Small()
                             ).Gap(4) :
-                        item.Status == ItemStatus.Done ?
-                            new Button("← Reverse", () => UpdateItemStatus(item.Id, ItemStatus.InProgress)).Destructive().Small() :
+                        task.Status == ItemStatus.Done ?
+                            new Button("← Reverse", () => UpdateItemStatus(task.Id, ItemStatus.InProgress)).Destructive().Small() :
                         null
                     ).Gap(8)
                 ).Gap(8)
             );
+        }
+
+        // Helper to build Epic/Story hierarchy with kanban columns inside each story
+        object BuildHierarchyPanel()
+        {
+            // Group stories by their parent epic
+            var epicGroups = sprintStories
+                .GroupBy(story => story.ParentId)
+                .OrderBy(g => g.Key);
+
+            return epicGroups.Any() ?
+                Layout.Vertical(
+                    epicGroups.Select(epicGroup =>
+                    {
+                        var epic = lastBacklogItems.Value.FirstOrDefault(e => e.Id == epicGroup.Key);
+                        var stories = epicGroup.ToArray();
+
+                        return new Card(
+                            Layout.Vertical(
+                                // Epic header
+                                Layout.Horizontal(
+                                    GetIssueTypeBadge(IssueType.Epic),
+                                    Text.Strong(epic?.Title ?? "Unknown Epic").Width(Size.Grow())
+                                ),
+
+                                // Stories within epic
+                                Layout.Vertical(
+                                    stories.Select(story =>
+                                    {
+                                        // Get tasks for this story grouped by status
+                                        var storyTasks = allTasks.Where(t => t.ParentId == story.Id).ToArray();
+                                        var todoTasks = storyTasks.Where(t => t.Status == ItemStatus.Todo).ToArray();
+                                        var inProgressTasks = storyTasks.Where(t => t.Status == ItemStatus.InProgress).ToArray();
+                                        var doneTasks = storyTasks.Where(t => t.Status == ItemStatus.Done).ToArray();
+
+                                        return new Card(
+                                            Layout.Vertical(
+                                                // Story header
+                                                Layout.Horizontal(
+                                                    GetIssueTypeBadge(IssueType.Story),
+                                                    Text.Strong(story.Title).Width(Size.Grow())
+                                                ),
+
+                                                // Kanban columns for this story's tasks
+                                                Layout.Horizontal(
+                                                    // To Do Column
+                                                    Layout.Vertical(
+                                                        Text.H4($"To Do ({todoTasks.Length})"),
+                                                        todoTasks.Length > 0 ?
+                                                            Layout.Vertical(
+                                                                todoTasks.Select(BuildTaskCard).ToArray()
+                                                            ).Gap(4) :
+                                                            Text.Small("No tasks")
+                                                    ).Gap(4).Width(Size.Grow()),
+
+                                                    // In Progress Column
+                                                    Layout.Vertical(
+                                                        Text.H4($"In Progress ({inProgressTasks.Length})"),
+                                                        inProgressTasks.Length > 0 ?
+                                                            Layout.Vertical(
+                                                                inProgressTasks.Select(BuildTaskCard).ToArray()
+                                                            ).Gap(4) :
+                                                            Text.Small("No tasks")
+                                                    ).Gap(4).Width(Size.Grow()),
+
+                                                    // Done Column
+                                                    Layout.Vertical(
+                                                        Text.H4($"Done ({doneTasks.Length})"),
+                                                        doneTasks.Length > 0 ?
+                                                            Layout.Vertical(
+                                                                doneTasks.Select(BuildTaskCard).ToArray()
+                                                            ).Gap(4) :
+                                                            Text.Small("No tasks")
+                                                    ).Gap(4).Width(Size.Grow())
+                                                ).Gap(8)
+                                            ).Gap(8)
+                                        );
+                                    }).ToArray()
+                                ).Gap(4)
+                            ).Gap(8)
+                        );
+                    }).ToArray()
+                ).Gap(8) :
+                new Card(Text.P("No stories in sprint"));
         }
 
         Badge GetIssueTypeBadge(IssueType type)
@@ -132,7 +225,7 @@ public class SprintBoardApp : ViewBase
             // Show current sprint info or message if no sprint
             currentSprint.Value == null ?
                 new Card(
-                    Text.P("No active sprint. Create a sprint in the Backlog tab to get started.")
+                    Text.P("No active sprint. Create a sprint in the Planning app to get started.")
                 ) :
                 new Card(
                     Layout.Vertical(
@@ -141,60 +234,23 @@ public class SprintBoardApp : ViewBase
                                 Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
                                 !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
                                     Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                                Text.Small($"Total items: {sprintItems.Length} | " +
-                                          $"To Do: {todoItems.Length} | " +
-                                          $"In Progress: {inProgressItems.Length} | " +
-                                          $"Done: {doneItems.Length}")
+                                Text.Small($"Tasks/Bugs: {allTasks.Length} | " +
+                                          $"To Do: {todoTasks.Length} | " +
+                                          $"In Progress: {inProgressTasks.Length} | " +
+                                          $"Done: {doneTasks.Length}")
                             ).Width(Size.Grow()),
                             new Button("Archive Sprint", ArchiveSprint).Secondary()
                         )
                     )
                 ),
 
-            // Three-column Kanban board
-            currentSprint.Value != null && sprintItems.Length > 0 ?
-                Layout.Horizontal(
-                    // To Do Column
-                    new Card(
-                        Layout.Vertical(
-                            Text.H3($"To Do ({todoItems.Length})"),
-                            todoItems.Length > 0 ?
-                                Layout.Vertical(
-                                    todoItems.Select(BuildSprintBoardItemCard).ToArray()
-                                ).Gap(8) :
-                                Text.P("No items in To Do")
-                        ).Gap(12)
-                    ).Width(Size.Grow()),
-
-                    // In Progress Column
-                    new Card(
-                        Layout.Vertical(
-                            Text.H3($"In Progress ({inProgressItems.Length})"),
-                            inProgressItems.Length > 0 ?
-                                Layout.Vertical(
-                                    inProgressItems.Select(BuildSprintBoardItemCard).ToArray()
-                                ).Gap(8) :
-                                Text.P("No items in progress")
-                        ).Gap(12)
-                    ).Width(Size.Grow()),
-
-                    // Done Column
-                    new Card(
-                        Layout.Vertical(
-                            Text.H3($"Done ({doneItems.Length})"),
-                            doneItems.Length > 0 ?
-                                Layout.Vertical(
-                                    doneItems.Select(BuildSprintBoardItemCard).ToArray()
-                                ).Gap(8) :
-                                Text.P("No completed items")
-                        ).Gap(12)
-                    ).Width(Size.Grow())
-                ).Gap(16) :
-
-                currentSprint.Value != null ?
-                    new Card(
-                        Text.P("No items in sprint yet. Add items from the Backlog tab.")
-                    ) : null
+            // Hierarchical Kanban board with columns inside each story
+            currentSprint.Value != null && sprintStories.Length > 0 ?
+                BuildHierarchyPanel() :
+            currentSprint.Value != null ?
+                new Card(
+                    Text.P("No stories in sprint yet. Add stories from the Planning app.")
+                ) : null
         ).Gap(16);
     }
 }
