@@ -1,4 +1,5 @@
 using Taskly.Database;
+using Dapper;
 
 namespace Taskly.Database;
 
@@ -16,42 +17,26 @@ public class CleanDatabase
         {
             Console.WriteLine("⚠️  WARNING: Cleaning all database tables...");
 
-            var client = await InitDatabase.GetClient();
+            using var connection = InitDatabase.GetConnection();
 
             // Delete all backlog items
-            var items = await InitDatabase.GetAllBacklogItems();
-            foreach (var item in items)
-            {
-                await client
-                    .From<BacklogItemModel>()
-                    .Where(x => x.Id == item.Id)
-                    .Delete();
-            }
-            Console.WriteLine($"✓ Deleted {items.Count} backlog items");
+            var itemCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM backlog_items");
+            connection.Execute("DELETE FROM backlog_items");
+            Console.WriteLine($"✓ Deleted {itemCount} backlog items");
 
             // Delete all sprints
-            var sprints = await InitDatabase.GetAllSprints();
-            foreach (var sprint in sprints)
-            {
-                await client
-                    .From<SprintModel>()
-                    .Where(x => x.Id == sprint.Id)
-                    .Delete();
-            }
-            Console.WriteLine($"✓ Deleted {sprints.Count} sprints");
+            var sprintCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM sprints");
+            connection.Execute("DELETE FROM sprints");
+            Console.WriteLine($"✓ Deleted {sprintCount} sprints");
 
             // Delete all developers
-            var developers = await client.From<DeveloperModel>().Get();
-            foreach (var developer in developers.Models)
-            {
-                await client
-                    .From<DeveloperModel>()
-                    .Where(x => x.Id == developer.Id)
-                    .Delete();
-            }
-            Console.WriteLine($"✓ Deleted {developers.Models.Count} developers");
+            var developerCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM developers");
+            connection.Execute("DELETE FROM developers");
+            Console.WriteLine($"✓ Deleted {developerCount} developers");
 
             Console.WriteLine("✓ Database cleaned successfully!");
+
+            await Task.CompletedTask; // Keep async signature for compatibility
         }
         catch (Exception ex)
         {
@@ -69,13 +54,15 @@ public class CleanDatabase
         {
             Console.WriteLine("Cleaning backlog items...");
 
-            var items = await InitDatabase.GetAllBacklogItems();
+            var items = InitDatabase.GetAllBacklogItems();
             foreach (var item in items)
             {
-                await InitDatabase.DeleteBacklogItem(item.Id);
+                InitDatabase.DeleteBacklogItem(item.Id);
             }
 
             Console.WriteLine($"✓ Deleted {items.Count} backlog items");
+
+            await Task.CompletedTask; // Keep async signature for compatibility
         }
         catch (Exception ex)
         {
@@ -93,18 +80,13 @@ public class CleanDatabase
         {
             Console.WriteLine("Cleaning sprints...");
 
-            var client = await InitDatabase.GetClient();
-            var sprints = await InitDatabase.GetAllSprints();
+            using var connection = InitDatabase.GetConnection();
+            var sprintCount = connection.ExecuteScalar<int>("SELECT COUNT(*) FROM sprints");
+            connection.Execute("DELETE FROM sprints");
 
-            foreach (var sprint in sprints)
-            {
-                await client
-                    .From<SprintModel>()
-                    .Where(x => x.Id == sprint.Id)
-                    .Delete();
-            }
+            Console.WriteLine($"✓ Deleted {sprintCount} sprints");
 
-            Console.WriteLine($"✓ Deleted {sprints.Count} sprints");
+            await Task.CompletedTask; // Keep async signature for compatibility
         }
         catch (Exception ex)
         {
@@ -125,11 +107,12 @@ public class CleanDatabase
             // Clean all tables first
             await CleanAllTables();
 
+            // Reset auto-increment sequences in SQLite
+            using var connection = InitDatabase.GetConnection();
+            connection.Execute("DELETE FROM sqlite_sequence WHERE name IN ('backlog_items', 'sprints', 'developers')");
+
             Console.WriteLine("✓ Database reset complete!");
-            Console.WriteLine("Note: Sequence/auto-increment IDs are not reset. To reset them, run these SQL commands:");
-            Console.WriteLine("  ALTER SEQUENCE backlog_items_id_seq RESTART WITH 1;");
-            Console.WriteLine("  ALTER SEQUENCE sprints_id_seq RESTART WITH 1;");
-            Console.WriteLine("  ALTER SEQUENCE developers_id_seq RESTART WITH 1;");
+            Console.WriteLine("✓ Auto-increment IDs have been reset to 1");
         }
         catch (Exception ex)
         {

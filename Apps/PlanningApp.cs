@@ -38,13 +38,13 @@ public class PlanningApp : ViewBase
                 Console.WriteLine("PlanningApp: Loading data from database...");
 
                 // Load backlog items
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
                 Console.WriteLine($"PlanningApp: Loaded {items.Length} backlog items");
 
                 // Load current sprint
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -52,9 +52,9 @@ public class PlanningApp : ViewBase
                 }
 
                 // Load archived sprints
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -104,12 +104,31 @@ public class PlanningApp : ViewBase
             try
             {
                 // Reload backlog items
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
+                // Refresh opened epic/story references if they exist
+                if (openedEpic.Value != null)
+                {
+                    var refreshedEpic = items.FirstOrDefault(i => i.Id == openedEpic.Value.Id);
+                    if (refreshedEpic != null)
+                    {
+                        openedEpic.Set(refreshedEpic);
+                    }
+                }
+
+                if (openedStory.Value != null)
+                {
+                    var refreshedStory = items.FirstOrDefault(i => i.Id == openedStory.Value.Id);
+                    if (refreshedStory != null)
+                    {
+                        openedStory.Set(refreshedStory);
+                    }
+                }
+
                 // Reload current sprint
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -120,9 +139,9 @@ public class PlanningApp : ViewBase
                 }
 
                 // Reload archived sprints
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -170,7 +189,7 @@ public class PlanningApp : ViewBase
                 };
 
                 // Save to database
-                var created = await InitDatabase.CreateBacklogItem(newItemModel);
+                var created = InitDatabase.CreateBacklogItem(newItemModel);
 
                 if (created != null)
                 {
@@ -220,11 +239,11 @@ public class PlanningApp : ViewBase
                     EndDate = DateTime.Now.AddDays(14), // 2-week sprint
                     Goal = newSprintGoal.Value,
                     ItemIds = new List<int>(),
-                    IsArchived = false
+                    IsArchived = 0
                 };
 
                 // Save to database
-                var created = await InitDatabase.CreateSprint(sprintModel);
+                var created = InitDatabase.CreateSprint(sprintModel);
 
                 if (created != null)
                 {
@@ -247,7 +266,7 @@ public class PlanningApp : ViewBase
                 if (item != null)
                 {
                     var updated = item with { Status = ItemStatus.Backlog, SprintId = null };
-                    await InitDatabase.UpdateBacklogItem(updated.ToBacklogItemModel());
+                    InitDatabase.UpdateBacklogItem(updated.ToBacklogItemModel());
                 }
 
                 // Update sprint by removing item ID
@@ -255,7 +274,7 @@ public class PlanningApp : ViewBase
                 {
                     ItemIds = currentSprint.Value.ItemIds.Remove(itemId)
                 };
-                await InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
+                InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
 
                 // Reload data
                 await ReloadData();
@@ -268,12 +287,15 @@ public class PlanningApp : ViewBase
             {
                 // Archive the sprint in database
                 var sprintModel = currentSprint.Value.ToSprintModel(isArchived: true);
-                await InitDatabase.UpdateSprint(sprintModel);
+                InitDatabase.UpdateSprint(sprintModel);
 
                 // Reload data
                 await ReloadData();
             }
         }
+
+        // Force reactivity by reading backlogItems.Value.Length (this makes the view re-render when backlogItems changes)
+        var _ = backlogItems.Value.Length;
 
         // Conditional rendering based on hierarchy navigation
         return openedStory.Value != null ?
@@ -462,10 +484,10 @@ public class PlanningApp : ViewBase
 
         async void DeleteItem(int id)
         {
-            await InitDatabase.DeleteBacklogItem(id);
+            InitDatabase.DeleteBacklogItem(id);
 
             // Reload data
-            var itemModels = await InitDatabase.GetAllBacklogItems();
+            var itemModels = InitDatabase.GetAllBacklogItems();
             var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
             backlogItems.Set(items);
         }
@@ -513,19 +535,28 @@ public class PlanningApp : ViewBase
     // EPIC DETAIL VIEW: Shows Stories within an Epic
     private object BuildEpicDetailView(BacklogItem epic, IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<BacklogItem?> openedStory, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints, IState<bool> isAddItemModalOpen, IState<BacklogItem?> addTaskToStory, IState<IssueType> newIssueType, ISignalSender<bool, bool> refreshSignal)
     {
-        // Get Stories that belong to this Epic
-        var stories = backlogItems.Value.Where(item => item.ParentId == epic.Id && item.Type == IssueType.Story).ToArray();
+        // Debug: Print all items
+        Console.WriteLine($"BuildEpicDetailView: All items in backlogItems:");
+        foreach (var item in backlogItems.Value)
+        {
+            Console.WriteLine($"  ID={item.Id}, Type={item.Type}, ParentId={item.ParentId}, Title={item.Title}");
+        }
+
+        // Get Stories that belong to this Epic - use openedEpic.Value to get latest state
+        var stories = backlogItems.Value.Where(item => item.ParentId == openedEpic.Value?.Id && item.Type == IssueType.Story).ToArray();
+
+        Console.WriteLine($"BuildEpicDetailView: Epic ID={openedEpic.Value?.Id}, Total items={backlogItems.Value.Length}, Stories found={stories.Length}");
 
         // Helper to reload data from database and notify other apps
         async Task ReloadData()
         {
             try
             {
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -535,9 +566,9 @@ public class PlanningApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -554,7 +585,7 @@ public class PlanningApp : ViewBase
 
         async void DeleteItem(int id)
         {
-            await InitDatabase.DeleteBacklogItem(id);
+            InitDatabase.DeleteBacklogItem(id);
             await ReloadData();
         }
 
@@ -571,7 +602,7 @@ public class PlanningApp : ViewBase
                 if (itemToAdd != null)
                 {
                     var updatedStory = itemToAdd with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id };
-                    await InitDatabase.UpdateBacklogItem(updatedStory.ToBacklogItemModel());
+                    InitDatabase.UpdateBacklogItem(updatedStory.ToBacklogItemModel());
                 }
 
                 // If it's a Story, also update all its child Tasks/Bugs to Todo status
@@ -583,7 +614,7 @@ public class PlanningApp : ViewBase
                     foreach (var task in childTasks)
                     {
                         var updatedTask = task with { Status = ItemStatus.Todo, SprintId = currentSprint.Value.Id };
-                        await InitDatabase.UpdateBacklogItem(updatedTask.ToBacklogItemModel());
+                        InitDatabase.UpdateBacklogItem(updatedTask.ToBacklogItemModel());
                     }
                 }
 
@@ -592,7 +623,7 @@ public class PlanningApp : ViewBase
                 {
                     ItemIds = currentSprint.Value.ItemIds.Add(itemId)
                 };
-                await InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
+                InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
 
                 Console.WriteLine($"Sprint now has {updatedSprint.ItemIds.Length} items");
 
@@ -612,7 +643,7 @@ public class PlanningApp : ViewBase
                 if (itemToRemove != null)
                 {
                     var updatedStory = itemToRemove with { Status = ItemStatus.Backlog, SprintId = null };
-                    await InitDatabase.UpdateBacklogItem(updatedStory.ToBacklogItemModel());
+                    InitDatabase.UpdateBacklogItem(updatedStory.ToBacklogItemModel());
                 }
 
                 // If it's a Story, also update all its child Tasks/Bugs back to Backlog status
@@ -622,7 +653,7 @@ public class PlanningApp : ViewBase
                     foreach (var task in childTasks)
                     {
                         var updatedTask = task with { Status = ItemStatus.Backlog, SprintId = null };
-                        await InitDatabase.UpdateBacklogItem(updatedTask.ToBacklogItemModel());
+                        InitDatabase.UpdateBacklogItem(updatedTask.ToBacklogItemModel());
                     }
                 }
 
@@ -631,7 +662,7 @@ public class PlanningApp : ViewBase
                 {
                     ItemIds = currentSprint.Value.ItemIds.Remove(itemId)
                 };
-                await InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
+                InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
 
                 // Reload data
                 await ReloadData();
@@ -733,10 +764,10 @@ public class PlanningApp : ViewBase
 
         async void DeleteItem(int id)
         {
-            await InitDatabase.DeleteBacklogItem(id);
+            InitDatabase.DeleteBacklogItem(id);
 
             // Reload data
-            var itemModels = await InitDatabase.GetAllBacklogItems();
+            var itemModels = InitDatabase.GetAllBacklogItems();
             var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
             backlogItems.Set(items);
         }

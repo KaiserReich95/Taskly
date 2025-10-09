@@ -32,21 +32,21 @@ public class SprintArchiveApp : ViewBase
                 Console.WriteLine("SprintArchive loading data from database...");
 
                 // Load backlog items
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
                 // Load current sprint
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
                 }
 
                 // Load archived sprints
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -65,11 +65,11 @@ public class SprintArchiveApp : ViewBase
         {
             try
             {
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -79,9 +79,9 @@ public class SprintArchiveApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -98,12 +98,12 @@ public class SprintArchiveApp : ViewBase
             if (currentSprint.Value != null)
             {
                 var currentModel = currentSprint.Value.ToSprintModel(isArchived: true);
-                await InitDatabase.UpdateSprint(currentModel);
+                InitDatabase.UpdateSprint(currentModel);
             }
 
             // Unarchive the selected sprint and make it current
             var restoredModel = sprint.ToSprintModel(isArchived: false);
-            await InitDatabase.UpdateSprint(restoredModel);
+            InitDatabase.UpdateSprint(restoredModel);
 
             // Reload data
             await ReloadData();
