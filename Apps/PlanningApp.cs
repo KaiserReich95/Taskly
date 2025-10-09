@@ -27,25 +27,28 @@ public class PlanningApp : ViewBase
         var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
         var isLoading = UseState(true);
 
+        // Create signal to notify other apps to refresh
+        var refreshSignal = Context.CreateSignal<RefreshDataSignal, bool, bool>();
+
         // Load data from database on mount
         UseEffect(async () =>
         {
             try
             {
-                Console.WriteLine("Loading data from database...");
+                Console.WriteLine("PlanningApp: Loading data from database...");
 
                 // Load backlog items
                 var itemModels = await InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
-                Console.WriteLine($"Loaded {items.Length} backlog items");
+                Console.WriteLine($"PlanningApp: Loaded {items.Length} backlog items");
 
                 // Load current sprint
                 var currentSprintModel = await InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
-                    Console.WriteLine($"Loaded current sprint: {currentSprintModel.Name}");
+                    Console.WriteLine($"PlanningApp: Loaded current sprint: {currentSprintModel.Name}");
                 }
 
                 // Load archived sprints
@@ -55,30 +58,28 @@ public class PlanningApp : ViewBase
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
-                Console.WriteLine($"Loaded {archived.Length} archived sprints");
+                Console.WriteLine($"PlanningApp: Loaded {archived.Length} archived sprints");
 
                 isLoading.Set(false);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error loading data: {ex.Message}");
+                Console.WriteLine($"PlanningApp: Error loading data: {ex.Message}");
                 isLoading.Set(false);
             }
         });
 
         return isLoading.Value ?
             new Card(Text.P("Loading...")) :
-            BuildBacklogView(backlogItems, currentSprint, archivedSprints);
+            BuildBacklogView(backlogItems, currentSprint, archivedSprints, refreshSignal);
     }
 
     private object BuildBacklogView(
         IState<ImmutableArray<BacklogItem>> backlogItems,
         IState<Sprint> currentSprint,
-        IState<ImmutableArray<Sprint>> archivedSprints)
+        IState<ImmutableArray<Sprint>> archivedSprints,
+        ISignalSender<bool, bool> refreshSignal)
     {
-        // Create signal to notify other apps to refresh
-        var refreshSignal = Context.CreateSignal<RefreshDataSignal, bool, bool>();
-
         // Hierarchy navigation state
         var openedEpic = UseState<BacklogItem?>(() => null);
         var openedStory = UseState<BacklogItem?>(() => null);
@@ -356,11 +357,18 @@ public class PlanningApp : ViewBase
                 // Sprint management section
                 BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
 
-                BuildEpicDetailView(openedEpic.Value, backlogItems, openedEpic, openedStory, currentSprint, archivedSprints, isAddItemModalOpen, addTaskToStory, newIssueType)
+                BuildEpicDetailView(openedEpic.Value, backlogItems, openedEpic, openedStory, currentSprint, archivedSprints, isAddItemModalOpen, addTaskToStory, newIssueType, refreshSignal)
             ) :
             // EPIC LIST VIEW: Show all Epics with Sprint Management
             Layout.Vertical(
-                Text.H2("Product Backlog"),
+                Layout.Horizontal(
+                    Text.H2("Product Backlog").Width(Size.Grow()),
+                    new Button("Clean Database", async () =>
+                    {
+                        await CleanDatabase.CleanAllTables();
+                        await ReloadData();
+                    }).Destructive().Small()
+                ).Gap(8),
 
                 new Button("+ Add Epic", () => { newIssueType.Set(IssueType.Epic); isAddItemModalOpen.Set(true); }).Primary(),
 
@@ -503,12 +511,12 @@ public class PlanningApp : ViewBase
     }
 
     // EPIC DETAIL VIEW: Shows Stories within an Epic
-    private object BuildEpicDetailView(BacklogItem epic, IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<BacklogItem?> openedStory, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints, IState<bool> isAddItemModalOpen, IState<BacklogItem?> addTaskToStory, IState<IssueType> newIssueType)
+    private object BuildEpicDetailView(BacklogItem epic, IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<BacklogItem?> openedStory, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints, IState<bool> isAddItemModalOpen, IState<BacklogItem?> addTaskToStory, IState<IssueType> newIssueType, ISignalSender<bool, bool> refreshSignal)
     {
         // Get Stories that belong to this Epic
         var stories = backlogItems.Value.Where(item => item.ParentId == epic.Id && item.Type == IssueType.Story).ToArray();
 
-        // Helper to reload data from database
+        // Helper to reload data from database and notify other apps
         async Task ReloadData()
         {
             try
@@ -533,10 +541,14 @@ public class PlanningApp : ViewBase
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
+
+                // Notify other apps to refresh
+                await refreshSignal.Send(true);
+                Console.WriteLine("PlanningApp: Sent refresh signal to other apps");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error reloading data: {ex.Message}");
+                Console.WriteLine($"PlanningApp: Error reloading data: {ex.Message}");
             }
         }
 
