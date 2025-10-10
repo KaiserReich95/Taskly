@@ -14,35 +14,33 @@ public class SprintBoardApp : ViewBase
         var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
         var isLoading = UseState(true);
 
+        // Create signal to notify other apps to refresh
+        var refreshSignal = Context.CreateSignal<RefreshDataSignal, bool, bool>();
+
         // Listen for refresh signals from other apps
         var refreshReceiver = Context.UseSignal<RefreshDataSignal, bool, bool>();
 
         UseEffect(() => refreshReceiver.Receive(value =>
         {
-            Console.WriteLine("SprintBoard: Received refresh signal, reloading from database...");
-            _ = ReloadData(); // Fire and forget
+            ReloadData();
             return true;
         }));
 
         // Load data from database on mount
-        UseEffect(async () =>
+        UseEffect(() =>
         {
             try
             {
-                Console.WriteLine("SprintBoard loading data from database...");
-
                 // Load backlog items
                 var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
-                Console.WriteLine($"Loaded {items.Length} backlog items");
 
                 // Load current sprint
                 var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
-                    Console.WriteLine($"Loaded current sprint: {currentSprintModel.Name}");
                 }
 
                 // Load archived sprints
@@ -63,7 +61,7 @@ public class SprintBoardApp : ViewBase
         });
 
         // Helper to reload data from database
-        async Task ReloadData()
+        void ReloadData()
         {
             try
             {
@@ -95,14 +93,14 @@ public class SprintBoardApp : ViewBase
         }
 
         // Helper method to update item status in database
-        async void UpdateItemStatus(int id, ItemStatus newStatus)
+        void UpdateItemStatus(int id, ItemStatus newStatus)
         {
             var item = backlogItems.Value.FirstOrDefault(i => i.Id == id);
             if (item != null)
             {
                 var updated = item with { Status = newStatus };
                 InitDatabase.UpdateBacklogItem(updated.ToBacklogItemModel());
-                await ReloadData();
+                ReloadData();
             }
         }
 
@@ -113,7 +111,10 @@ public class SprintBoardApp : ViewBase
                 // Archive the sprint in database
                 var sprintModel = currentSprint.Value.ToSprintModel(isArchived: true);
                 InitDatabase.UpdateSprint(sprintModel);
-                await ReloadData();
+                ReloadData();
+
+                // Notify other apps to refresh
+                await refreshSignal.Send(true);
             }
         }
 

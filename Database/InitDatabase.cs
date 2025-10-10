@@ -1,7 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Dapper;
 using Newtonsoft.Json;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Taskly.Database;
 
@@ -11,12 +10,38 @@ namespace Taskly.Database;
 public class InitDatabase
 {
     private static string _connectionString = "Data Source=Database/taskly_database.db";
+    private static string _templatePath = "Database/taskly_database.template.db";
+    private static string _dbPath = "Database/taskly_database.db";
+
+    /// <summary>
+    /// Initialize database from template if it doesn't exist
+    /// </summary>
+    public static void EnsureDatabaseExists()
+    {
+        if (!File.Exists(_dbPath))
+        {
+            if (File.Exists(_templatePath))
+            {
+                Console.WriteLine("Database not found. Creating from template...");
+                File.Copy(_templatePath, _dbPath);
+                Console.WriteLine("✓ Database created successfully");
+            }
+            else
+            {
+                throw new FileNotFoundException(
+                    "Database template not found. Please ensure 'Database/taskly_database.template.db' exists in the repository.");
+            }
+        }
+    }
 
     /// <summary>
     /// Get a new database connection
     /// </summary>
     public static SqliteConnection GetConnection()
     {
+        // Ensure database exists before opening connection
+        EnsureDatabaseExists();
+
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
@@ -65,13 +90,6 @@ public class InitDatabase
                         updated_at AS UpdatedAt
                     FROM backlog_items";
         var items = connection.Query<BacklogItemModel>(sql).ToList();
-
-        Console.WriteLine($"GetAllBacklogItems: Retrieved {items.Count} items from database");
-        foreach (var item in items)
-        {
-            Console.WriteLine($"  DB: ID={item.Id}, Type={item.Type}, ParentId={item.ParentId}, Title={item.Title}");
-        }
-
         return items;
     }
 
@@ -301,24 +319,13 @@ public class BacklogItemModel
     public int Id { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
-
-    [Column("story_points")]
     public int StoryPoints { get; set; }
-
     public int Priority { get; set; }
     public string Status { get; set; } = "Backlog";
     public string Type { get; set; } = "Task";
-
-    [Column("sprint_id")]
     public int? SprintId { get; set; }
-
-    [Column("parent_id")]
     public int? ParentId { get; set; }
-
-    [Column("created_at")]
     public DateTime CreatedAt { get; set; }
-
-    [Column("updated_at")]
     public DateTime UpdatedAt { get; set; }
 }
 
@@ -326,40 +333,20 @@ public class SprintModel
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
-
-    [Column("start_date")]
     public DateTime StartDate { get; set; }
-
-    [Column("end_date")]
     public DateTime EndDate { get; set; }
-
     public string? Goal { get; set; }
 
     // Not mapped to database - used for serialization
     [Newtonsoft.Json.JsonIgnore]
-    [NotMapped]
     public List<int>? ItemIds { get; set; }
 
     // Database column (JSON string)
-    [Column("item_ids")]
     public string ItemIdsJson { get; set; } = "[]";
 
     // SQLite stores boolean as 0/1
-    [Column("is_archived")]
     public int IsArchived { get; set; }
 
-    [Column("created_at")]
-    public DateTime CreatedAt { get; set; }
-
-    [Column("updated_at")]
-    public DateTime UpdatedAt { get; set; }
-}
-
-public class DeveloperModel
-{
-    public int Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public int Capacity { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

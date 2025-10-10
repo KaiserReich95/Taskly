@@ -30,25 +30,65 @@ public class PlanningApp : ViewBase
         // Create signal to notify other apps to refresh
         var refreshSignal = Context.CreateSignal<RefreshDataSignal, bool, bool>();
 
-        // Load data from database on mount
-        UseEffect(async () =>
+        // Listen for refresh signals from other apps
+        var refreshReceiver = Context.UseSignal<RefreshDataSignal, bool, bool>();
+
+        // Helper to reload data from database (used by signal receiver)
+        void ReloadFromSignal()
         {
             try
             {
-                Console.WriteLine("PlanningApp: Loading data from database...");
+                // Reload backlog items
+                var itemModels = InitDatabase.GetAllBacklogItems();
+                var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
+                backlogItems.Set(items);
 
+                // Reload current sprint
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                if (currentSprintModel != null)
+                {
+                    currentSprint.Set(currentSprintModel.ToSprint());
+                }
+                else
+                {
+                    currentSprint.Set((Sprint)null!);
+                }
+
+                // Reload archived sprints
+                var allSprints = InitDatabase.GetAllSprints();
+                var archived = allSprints
+                    .Where(s => s.IsArchived == 1)
+                    .Select(s => s.ToSprint())
+                    .ToImmutableArray();
+                archivedSprints.Set(archived);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reloading data from signal: {ex.Message}");
+            }
+        }
+
+        UseEffect(() => refreshReceiver.Receive(value =>
+        {
+            ReloadFromSignal();
+            return true;
+        }));
+
+        // Load data from database on mount
+        UseEffect(() =>
+        {
+            try
+            {
                 // Load backlog items
                 var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
-                Console.WriteLine($"PlanningApp: Loaded {items.Length} backlog items");
 
                 // Load current sprint
                 var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
-                    Console.WriteLine($"PlanningApp: Loaded current sprint: {currentSprintModel.Name}");
                 }
 
                 // Load archived sprints
@@ -58,13 +98,12 @@ public class PlanningApp : ViewBase
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
-                Console.WriteLine($"PlanningApp: Loaded {archived.Length} archived sprints");
 
                 isLoading.Set(false);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PlanningApp: Error loading data: {ex.Message}");
+                Console.WriteLine($"Error loading data: {ex.Message}");
                 isLoading.Set(false);
             }
         });
@@ -148,7 +187,6 @@ public class PlanningApp : ViewBase
 
                 // Notify other apps to refresh
                 await refreshSignal.Send(true);
-                Console.WriteLine("PlanningApp: Sent refresh signal to other apps");
             }
             catch (Exception ex)
             {
@@ -228,8 +266,6 @@ public class PlanningApp : ViewBase
 
         async ValueTask CreateSprint(Event<Button> _)
         {
-            Console.WriteLine($"CreateSprint called! Sprint name: '{newSprintName.Value}', Goal: '{newSprintGoal.Value}'");
-
             if (!string.IsNullOrWhiteSpace(newSprintName.Value))
             {
                 var sprintModel = new SprintModel
@@ -293,9 +329,6 @@ public class PlanningApp : ViewBase
                 await ReloadData();
             }
         }
-
-        // Force reactivity by reading backlogItems.Value.Length (this makes the view re-render when backlogItems changes)
-        var _ = backlogItems.Value.Length;
 
         // Conditional rendering based on hierarchy navigation
         return openedStory.Value != null ?
@@ -535,17 +568,8 @@ public class PlanningApp : ViewBase
     // EPIC DETAIL VIEW: Shows Stories within an Epic
     private object BuildEpicDetailView(BacklogItem epic, IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<BacklogItem?> openedStory, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints, IState<bool> isAddItemModalOpen, IState<BacklogItem?> addTaskToStory, IState<IssueType> newIssueType, ISignalSender<bool, bool> refreshSignal)
     {
-        // Debug: Print all items
-        Console.WriteLine($"BuildEpicDetailView: All items in backlogItems:");
-        foreach (var item in backlogItems.Value)
-        {
-            Console.WriteLine($"  ID={item.Id}, Type={item.Type}, ParentId={item.ParentId}, Title={item.Title}");
-        }
-
         // Get Stories that belong to this Epic - use openedEpic.Value to get latest state
         var stories = backlogItems.Value.Where(item => item.ParentId == openedEpic.Value?.Id && item.Type == IssueType.Story).ToArray();
-
-        Console.WriteLine($"BuildEpicDetailView: Epic ID={openedEpic.Value?.Id}, Total items={backlogItems.Value.Length}, Stories found={stories.Length}");
 
         // Helper to reload data from database and notify other apps
         async Task ReloadData()
@@ -575,11 +599,10 @@ public class PlanningApp : ViewBase
 
                 // Notify other apps to refresh
                 await refreshSignal.Send(true);
-                Console.WriteLine("PlanningApp: Sent refresh signal to other apps");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"PlanningApp: Error reloading data: {ex.Message}");
+                Console.WriteLine($"Error reloading data: {ex.Message}");
             }
         }
 
@@ -596,8 +619,6 @@ public class PlanningApp : ViewBase
                 // When adding a Story to sprint, also update status of all its child Tasks/Bugs to Todo
                 var itemToAdd = backlogItems.Value.FirstOrDefault(i => i.Id == itemId);
 
-                Console.WriteLine($"Adding item {itemId} ({itemToAdd?.Title}) to sprint {currentSprint.Value.Name}");
-
                 // Update the story status
                 if (itemToAdd != null)
                 {
@@ -609,7 +630,6 @@ public class PlanningApp : ViewBase
                 if (itemToAdd?.Type == IssueType.Story)
                 {
                     var childTasks = backlogItems.Value.Where(item => item.ParentId == itemId).ToArray();
-                    Console.WriteLine($"Story has {childTasks.Length} child tasks/bugs");
 
                     foreach (var task in childTasks)
                     {
@@ -624,8 +644,6 @@ public class PlanningApp : ViewBase
                     ItemIds = currentSprint.Value.ItemIds.Add(itemId)
                 };
                 InitDatabase.UpdateSprint(updatedSprint.ToSprintModel());
-
-                Console.WriteLine($"Sprint now has {updatedSprint.ItemIds.Length} items");
 
                 // Reload data
                 await ReloadData();
