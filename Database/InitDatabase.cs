@@ -1,60 +1,65 @@
-using Supabase;
-using Supabase.Postgrest;
-using Supabase.Postgrest.Models;
-using Supabase.Postgrest.Attributes;
+using Microsoft.Data.Sqlite;
+using Dapper;
+using Newtonsoft.Json;
 
 namespace Taskly.Database;
 
 /// <summary>
-/// Database initialization and connection setup for Supabase
+/// Database initialization and connection setup for SQLite
 /// </summary>
 public class InitDatabase
 {
-    private static Supabase.Client? _client;
+    private static string _connectionString = "Data Source=Database/taskly_database.db";
+    private static string _templatePath = "Database/taskly_database.template.db";
+    private static string _dbPath = "Database/taskly_database.db";
 
     /// <summary>
-    /// Initialize and get the Supabase client instance
+    /// Initialize database from template if it doesn't exist
     /// </summary>
-    public static async Task<Supabase.Client> GetClient()
+    public static void EnsureDatabaseExists()
     {
-        if (_client != null)
-            return _client;
-
-        // Get configuration from environment variables
-        var url = Environment.GetEnvironmentVariable("SUPABASE_URL")
-            ?? "https://ewhnkdzqvqhgmemkuxlz.supabase.co"; // Fallback to hardcoded URL
-
-        var key = Environment.GetEnvironmentVariable("SUPABASE_ANON_KEY")
-            ?? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3aG5rZHpxdnFoZ21lbWt1eGx6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5MDI1MDYsImV4cCI6MjA3NTQ3ODUwNn0.O6h99Ay9y4yYMkLUdvlhjGEPVXI-BGKKn7oLIeF65b8"; // Fallback to hardcoded key
-
-        var options = new SupabaseOptions
+        if (!File.Exists(_dbPath))
         {
-            AutoConnectRealtime = true
-        };
+            if (File.Exists(_templatePath))
+            {
+                Console.WriteLine("Database not found. Creating from template...");
+                File.Copy(_templatePath, _dbPath);
+                Console.WriteLine("✓ Database created successfully");
+            }
+            else
+            {
+                throw new FileNotFoundException(
+                    "Database template not found. Please ensure 'Database/taskly_database.template.db' exists in the repository.");
+            }
+        }
+    }
 
-        _client = new Supabase.Client(url, key, options);
-        await _client.InitializeAsync();
+    /// <summary>
+    /// Get a new database connection
+    /// </summary>
+    public static SqliteConnection GetConnection()
+    {
+        // Ensure database exists before opening connection
+        EnsureDatabaseExists();
 
-        Console.WriteLine("✓ Connected to Supabase database");
-        return _client;
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        // Enable foreign keys for this connection
+        connection.Execute("PRAGMA foreign_keys = ON;");
+
+        return connection;
     }
 
     /// <summary>
     /// Test the database connection
     /// </summary>
-    public static async Task<bool> TestConnection()
+    public static bool TestConnection()
     {
         try
         {
-            var client = await GetClient();
-
-            // Try a simple query to verify connection
-            var response = await client
-                .From<BacklogItemModel>()
-                .Select("id")
-                .Limit(1)
-                .Get();
-
+            using var connection = GetConnection();
+            connection.QueryFirstOrDefault<int>("SELECT COUNT(*) FROM backlog_items");
             Console.WriteLine("✓ Database connection test successful");
             return true;
         }
@@ -68,181 +73,280 @@ public class InitDatabase
     /// <summary>
     /// Get all backlog items
     /// </summary>
-    public static async Task<List<BacklogItemModel>> GetAllBacklogItems()
+    public static List<BacklogItemModel> GetAllBacklogItems()
     {
-        var client = await GetClient();
-        var response = await client.From<BacklogItemModel>().Get();
-        return response.Models;
+        using var connection = GetConnection();
+        var sql = @"SELECT
+                        id AS Id,
+                        title AS Title,
+                        description AS Description,
+                        story_points AS StoryPoints,
+                        priority AS Priority,
+                        status AS Status,
+                        type AS Type,
+                        sprint_id AS SprintId,
+                        parent_id AS ParentId,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM backlog_items";
+        var items = connection.Query<BacklogItemModel>(sql).ToList();
+        return items;
     }
 
     /// <summary>
     /// Get all sprints
     /// </summary>
-    public static async Task<List<SprintModel>> GetAllSprints()
+    public static List<SprintModel> GetAllSprints()
     {
-        var client = await GetClient();
-        var response = await client.From<SprintModel>().Get();
-        return response.Models;
+        using var connection = GetConnection();
+        var sql = @"SELECT
+                        id AS Id,
+                        name AS Name,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        goal AS Goal,
+                        item_ids AS ItemIdsJson,
+                        is_archived AS IsArchived,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM sprints";
+        var sprints = connection.Query<SprintModel>(sql).ToList();
+
+        // Deserialize JSON item_ids for each sprint
+        foreach (var sprint in sprints)
+        {
+            sprint.ItemIds = string.IsNullOrEmpty(sprint.ItemIdsJson)
+                ? new List<int>()
+                : JsonConvert.DeserializeObject<List<int>>(sprint.ItemIdsJson) ?? new List<int>();
+        }
+
+        return sprints;
     }
 
     /// <summary>
     /// Get current (non-archived) sprint
     /// </summary>
-    public static async Task<SprintModel?> GetCurrentSprint()
+    public static SprintModel? GetCurrentSprint()
     {
-        var client = await GetClient();
-        var response = await client
-            .From<SprintModel>()
-            .Where(x => x.IsArchived == false)
-            .Limit(1)
-            .Get();
+        using var connection = GetConnection();
+        var sql = @"SELECT
+                        id AS Id,
+                        name AS Name,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        goal AS Goal,
+                        item_ids AS ItemIdsJson,
+                        is_archived AS IsArchived,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM sprints
+                    WHERE is_archived = 0
+                    LIMIT 1";
+        var sprint = connection.QueryFirstOrDefault<SprintModel>(sql);
 
-        return response.Models.FirstOrDefault();
+        if (sprint != null)
+        {
+            sprint.ItemIds = string.IsNullOrEmpty(sprint.ItemIdsJson)
+                ? new List<int>()
+                : JsonConvert.DeserializeObject<List<int>>(sprint.ItemIdsJson) ?? new List<int>();
+        }
+
+        return sprint;
     }
 
     /// <summary>
     /// Create a new backlog item
     /// </summary>
-    public static async Task<BacklogItemModel?> CreateBacklogItem(BacklogItemModel item)
+    public static BacklogItemModel? CreateBacklogItem(BacklogItemModel item)
     {
-        var client = await GetClient();
-        var response = await client.From<BacklogItemModel>().Insert(item);
-        return response.Models.FirstOrDefault();
+        using var connection = GetConnection();
+        var sql = @"INSERT INTO backlog_items (title, description, story_points, priority, status, type, sprint_id, parent_id)
+                    VALUES (@Title, @Description, @StoryPoints, @Priority, @Status, @Type, @SprintId, @ParentId);
+                    SELECT
+                        id AS Id,
+                        title AS Title,
+                        description AS Description,
+                        story_points AS StoryPoints,
+                        priority AS Priority,
+                        status AS Status,
+                        type AS Type,
+                        sprint_id AS SprintId,
+                        parent_id AS ParentId,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM backlog_items WHERE id = last_insert_rowid();";
+        return connection.QueryFirstOrDefault<BacklogItemModel>(sql, item);
     }
 
     /// <summary>
     /// Update a backlog item
     /// </summary>
-    public static async Task<BacklogItemModel?> UpdateBacklogItem(BacklogItemModel item)
+    public static BacklogItemModel? UpdateBacklogItem(BacklogItemModel item)
     {
-        var client = await GetClient();
-        var response = await client
-            .From<BacklogItemModel>()
-            .Update(item);
-        return response.Models.FirstOrDefault();
+        using var connection = GetConnection();
+        var sql = @"UPDATE backlog_items
+                    SET title = @Title, description = @Description, story_points = @StoryPoints,
+                        priority = @Priority, status = @Status, type = @Type,
+                        sprint_id = @SprintId, parent_id = @ParentId
+                    WHERE id = @Id;
+                    SELECT
+                        id AS Id,
+                        title AS Title,
+                        description AS Description,
+                        story_points AS StoryPoints,
+                        priority AS Priority,
+                        status AS Status,
+                        type AS Type,
+                        sprint_id AS SprintId,
+                        parent_id AS ParentId,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM backlog_items WHERE id = @Id;";
+        return connection.QueryFirstOrDefault<BacklogItemModel>(sql, item);
     }
 
     /// <summary>
     /// Delete a backlog item
     /// </summary>
-    public static async Task DeleteBacklogItem(int id)
+    public static void DeleteBacklogItem(int id)
     {
-        var client = await GetClient();
-        await client
-            .From<BacklogItemModel>()
-            .Where(x => x.Id == id)
-            .Delete();
+        using var connection = GetConnection();
+        connection.Execute("DELETE FROM backlog_items WHERE id = @Id", new { Id = id });
     }
 
     /// <summary>
     /// Create a new sprint
     /// </summary>
-    public static async Task<SprintModel?> CreateSprint(SprintModel sprint)
+    public static SprintModel? CreateSprint(SprintModel sprint)
     {
-        var client = await GetClient();
-        var response = await client.From<SprintModel>().Insert(sprint);
-        return response.Models.FirstOrDefault();
+        using var connection = GetConnection();
+
+        // Serialize ItemIds to JSON
+        sprint.ItemIdsJson = JsonConvert.SerializeObject(sprint.ItemIds ?? new List<int>());
+
+        // Format DateTime as ISO 8601 string for SQLite
+        var sql = @"INSERT INTO sprints (name, start_date, end_date, goal, item_ids, is_archived)
+                    VALUES (@Name, @StartDate, @EndDate, @Goal, @ItemIdsJson, @IsArchived);
+                    SELECT
+                        id AS Id,
+                        name AS Name,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        goal AS Goal,
+                        item_ids AS ItemIdsJson,
+                        is_archived AS IsArchived,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM sprints WHERE id = last_insert_rowid();";
+
+        var parameters = new
+        {
+            sprint.Name,
+            StartDate = sprint.StartDate.ToString("yyyy-MM-dd HH:mm:ss"),
+            EndDate = sprint.EndDate.ToString("yyyy-MM-dd HH:mm:ss"),
+            sprint.Goal,
+            sprint.ItemIdsJson,
+            sprint.IsArchived
+        };
+
+        var result = connection.QueryFirstOrDefault<SprintModel>(sql, parameters);
+
+        if (result != null)
+        {
+            result.ItemIds = string.IsNullOrEmpty(result.ItemIdsJson)
+                ? new List<int>()
+                : JsonConvert.DeserializeObject<List<int>>(result.ItemIdsJson) ?? new List<int>();
+        }
+
+        return result;
     }
 
     /// <summary>
     /// Update a sprint
     /// </summary>
-    public static async Task<SprintModel?> UpdateSprint(SprintModel sprint)
+    public static SprintModel? UpdateSprint(SprintModel sprint)
     {
-        var client = await GetClient();
-        var response = await client
-            .From<SprintModel>()
-            .Update(sprint);
-        return response.Models.FirstOrDefault();
+        using var connection = GetConnection();
+
+        // Serialize ItemIds to JSON
+        sprint.ItemIdsJson = JsonConvert.SerializeObject(sprint.ItemIds ?? new List<int>());
+
+        var sql = @"UPDATE sprints
+                    SET name = @Name, start_date = @StartDate, end_date = @EndDate,
+                        goal = @Goal, item_ids = @ItemIdsJson, is_archived = @IsArchived
+                    WHERE id = @Id;
+                    SELECT
+                        id AS Id,
+                        name AS Name,
+                        start_date AS StartDate,
+                        end_date AS EndDate,
+                        goal AS Goal,
+                        item_ids AS ItemIdsJson,
+                        is_archived AS IsArchived,
+                        created_at AS CreatedAt,
+                        updated_at AS UpdatedAt
+                    FROM sprints WHERE id = @Id;";
+
+        var parameters = new
+        {
+            sprint.Id,
+            sprint.Name,
+            StartDate = sprint.StartDate.ToString("yyyy-MM-dd HH:mm:ss"),
+            EndDate = sprint.EndDate.ToString("yyyy-MM-dd HH:mm:ss"),
+            sprint.Goal,
+            sprint.ItemIdsJson,
+            sprint.IsArchived
+        };
+
+        var result = connection.QueryFirstOrDefault<SprintModel>(sql, parameters);
+
+        if (result != null)
+        {
+            result.ItemIds = string.IsNullOrEmpty(result.ItemIdsJson)
+                ? new List<int>()
+                : JsonConvert.DeserializeObject<List<int>>(result.ItemIdsJson) ?? new List<int>();
+        }
+
+        return result;
     }
 
 }
 
 // Database Models (matching the schema)
 
-[Table("backlog_items")]
-public class BacklogItemModel : BaseModel
+public class BacklogItemModel
 {
-    [PrimaryKey("id", false)]
     public int Id { get; set; }
-
-    [Column("title")]
     public string Title { get; set; } = string.Empty;
-
-    [Column("description")]
     public string? Description { get; set; }
-
-    [Column("story_points")]
     public int StoryPoints { get; set; }
-
-    [Column("priority")]
     public int Priority { get; set; }
-
-    [Column("status")]
     public string Status { get; set; } = "Backlog";
-
-    [Column("type")]
     public string Type { get; set; } = "Task";
-
-    [Column("sprint_id")]
     public int? SprintId { get; set; }
-
-    [Column("parent_id")]
     public int? ParentId { get; set; }
-
-    [Column("created_at")]
     public DateTime CreatedAt { get; set; }
-
-    [Column("updated_at")]
     public DateTime UpdatedAt { get; set; }
 }
 
-[Table("sprints")]
-public class SprintModel : BaseModel
+public class SprintModel
 {
-    [PrimaryKey("id", false)]
     public int Id { get; set; }
-
-    [Column("name")]
     public string Name { get; set; } = string.Empty;
-
-    [Column("start_date")]
     public DateTime StartDate { get; set; }
-
-    [Column("end_date")]
     public DateTime EndDate { get; set; }
-
-    [Column("goal")]
     public string? Goal { get; set; }
 
-    [Column("item_ids")]
+    // Not mapped to database - used for serialization
+    [Newtonsoft.Json.JsonIgnore]
     public List<int>? ItemIds { get; set; }
 
-    [Column("is_archived")]
-    public bool IsArchived { get; set; }
+    // Database column (JSON string)
+    public string ItemIdsJson { get; set; } = "[]";
 
-    [Column("created_at")]
+    // SQLite stores boolean as 0/1
+    public int IsArchived { get; set; }
+
     public DateTime CreatedAt { get; set; }
-
-    [Column("updated_at")]
-    public DateTime UpdatedAt { get; set; }
-}
-
-[Table("developers")]
-public class DeveloperModel : BaseModel
-{
-    [PrimaryKey("id", false)]
-    public int Id { get; set; }
-
-    [Column("name")]
-    public string Name { get; set; } = string.Empty;
-
-    [Column("capacity")]
-    public int Capacity { get; set; }
-
-    [Column("created_at")]
-    public DateTime CreatedAt { get; set; }
-
-    [Column("updated_at")]
     public DateTime UpdatedAt { get; set; }
 }

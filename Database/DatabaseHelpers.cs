@@ -65,7 +65,7 @@ public static class DatabaseHelpers
             EndDate = sprint.EndDate,
             Goal = sprint.Goal,
             ItemIds = sprint.ItemIds.ToList(),
-            IsArchived = false
+            IsArchived = 0  // Not archived by default (SQLite uses 0/1 for boolean)
         };
     }
 
@@ -80,7 +80,7 @@ public static class DatabaseHelpers
             EndDate = sprint.EndDate,
             Goal = sprint.Goal,
             ItemIds = sprint.ItemIds.ToList(),
-            IsArchived = isArchived
+            IsArchived = isArchived ? 1 : 0  // Convert boolean to int for SQLite
         };
     }
 }

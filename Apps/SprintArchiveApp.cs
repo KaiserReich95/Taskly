@@ -14,39 +14,39 @@ public class SprintArchiveApp : ViewBase
         var archivedSprints = UseState(ImmutableArray<Sprint>.Empty);
         var isLoading = UseState(true);
 
+        // Create signal to notify other apps to refresh
+        var refreshSignal = Context.CreateSignal<RefreshDataSignal, bool, bool>();
+
         // Listen for refresh signals from other apps
         var refreshReceiver = Context.UseSignal<RefreshDataSignal, bool, bool>();
 
         UseEffect(() => refreshReceiver.Receive(value =>
         {
-            Console.WriteLine("SprintArchive: Received refresh signal, reloading from database...");
-            _ = ReloadData(); // Fire and forget
+            ReloadData();
             return true;
         }));
 
         // Load data from database on mount
-        UseEffect(async () =>
+        UseEffect(() =>
         {
             try
             {
-                Console.WriteLine("SprintArchive loading data from database...");
-
                 // Load backlog items
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
                 // Load current sprint
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
                 }
 
                 // Load archived sprints
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -61,15 +61,15 @@ public class SprintArchiveApp : ViewBase
         });
 
         // Helper to reload data from database
-        async Task ReloadData()
+        void ReloadData()
         {
             try
             {
-                var itemModels = await InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = await InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint();
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -79,9 +79,9 @@ public class SprintArchiveApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                var allSprints = await InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints();
                 var archived = allSprints
-                    .Where(s => s.IsArchived)
+                    .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
                     .ToImmutableArray();
                 archivedSprints.Set(archived);
@@ -98,15 +98,18 @@ public class SprintArchiveApp : ViewBase
             if (currentSprint.Value != null)
             {
                 var currentModel = currentSprint.Value.ToSprintModel(isArchived: true);
-                await InitDatabase.UpdateSprint(currentModel);
+                InitDatabase.UpdateSprint(currentModel);
             }
 
             // Unarchive the selected sprint and make it current
             var restoredModel = sprint.ToSprintModel(isArchived: false);
-            await InitDatabase.UpdateSprint(restoredModel);
+            InitDatabase.UpdateSprint(restoredModel);
 
             // Reload data
-            await ReloadData();
+            ReloadData();
+
+            // Notify other apps to refresh
+            await refreshSignal.Send(true);
         }
 
         if (isLoading.Value)
