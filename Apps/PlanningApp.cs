@@ -515,7 +515,7 @@ public class PlanningApp : ViewBase
         // Get only Epics (items with no parent)
         var epics = backlogItems.Value.Where(item => item.Type == IssueType.Epic && item.ParentId == null).ToArray();
 
-        async void DeleteItem(int id)
+        void DeleteItem(int id)
         {
             InitDatabase.DeleteBacklogItem(id);
 
@@ -780,7 +780,7 @@ public class PlanningApp : ViewBase
         // Get Tasks and Bugs that belong to this Story
         var tasks = backlogItems.Value.Where(item => item.ParentId == story.Id && (item.Type == IssueType.Task || item.Type == IssueType.Bug)).ToArray();
 
-        async void DeleteItem(int id)
+        void DeleteItem(int id)
         {
             InitDatabase.DeleteBacklogItem(id);
 
