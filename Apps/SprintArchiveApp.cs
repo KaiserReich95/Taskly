@@ -174,14 +174,19 @@ public class SprintArchiveApp : ViewBase
                                                 sprintItems
                                                     .OrderBy(item => item.Id)
                                                     .Select(item => new Card(
-                                                        Layout.Horizontal(
-                                                            GetIssueTypeBadge(item.Type),
-                                                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
-                                                                $"{item.Title} - {item.Description}" : item.Title)
-                                                                .Width(Size.Grow()),
-                                                            new Badge(item.Status.ToString()).Secondary(),
-                                                            new Badge($"{item.StoryPoints} pts").Primary()
-                                                        )
+                                                        Layout.Vertical(
+                                                            // Title with badge
+                                                            Layout.Horizontal(
+                                                                GetIssueTypeBadge(item.Type),
+                                                                Text.Strong(item.Title)
+                                                            ).Gap(4),
+
+                                                            // Badges
+                                                            Layout.Horizontal(
+                                                                new Badge(item.Status.ToString()).Secondary(),
+                                                                new Badge($"{item.StoryPoints} pts").Primary()
+                                                            )
+                                                        ).Gap(4)
                                                     ))
                                                     .ToArray()
                                             ).Gap(2)

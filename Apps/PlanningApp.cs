@@ -544,14 +544,14 @@ public class PlanningApp : ViewBase
 
                             return new Card(
                                 Layout.Vertical(
-                                    // Title
-                                    Text.Strong("Epic: " + epic.Title),
-
-                                    // Badges and buttons
+                                    // Title with badge (constrained width)
                                     Layout.Horizontal(
-                                        // Issue type badge
                                         GetIssueTypeBadge(epic.Type),
+                                        Text.Strong(epic.Title)
+                                    ).Gap(4).Width(Size.Auto()),
 
+                                    // Badges and buttons (determines card width)
+                                    Layout.Horizontal(
                                         // Story count indicator
                                         new Badge($"{storiesCount} stories").Secondary(),
 
@@ -565,10 +565,10 @@ public class PlanningApp : ViewBase
                                         new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
                                     )
                                 ).Gap(4)
-                            );
+                            ).Width(Size.Fit());
                         }).ToArray()
                 ).Gap(4)
-        ).Gap(4).Width(Size.Units(110));
+        ).Gap(4);
     }
 
     // EPIC DETAIL VIEW: Shows Stories within an Epic
@@ -723,11 +723,14 @@ public class PlanningApp : ViewBase
 
                             return new Card(
                                 Layout.Vertical(
-                                    Text.Strong("Story: " + story.Title).Width(Size.Grow()),
-                                    // Story header
+                                    // Title with badge
                                     Layout.Horizontal(
                                         GetIssueTypeBadge(story.Type),
+                                        Text.Strong(story.Title)
+                                    ).Gap(4),
 
+                                    // Badges and buttons
+                                    Layout.Horizontal(
                                         new Badge($"{tasks.Length} tasks").Secondary(),
                                         new Badge($"{story.StoryPoints} pts").Primary(),
 
@@ -757,12 +760,14 @@ public class PlanningApp : ViewBase
                                                 bool taskInSprint = task.SprintId != null;
                                                 return new Card(
                                                     Layout.Vertical(
-                                                        // Title
-                                                        Text.P(task.Title),
+                                                        // Title with badge
+                                                        Layout.Horizontal(
+                                                            GetIssueTypeBadge(task.Type),
+                                                            Text.P(task.Title)
+                                                        ).Gap(4),
 
                                                         // Badges and buttons
                                                         Layout.Horizontal(
-                                                            GetIssueTypeBadge(task.Type),
                                                             new Badge($"{task.StoryPoints} pts").Primary(),
                                                             new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
                                                         )
@@ -829,12 +834,14 @@ public class PlanningApp : ViewBase
 
                             return new Card(
                                 Layout.Vertical(
-                                    // Title
-                                    Text.Strong(task.Title),
+                                    // Title with badge
+                                    Layout.Horizontal(
+                                        GetIssueTypeBadge(task.Type),
+                                        Text.Strong(task.Title)
+                                    ).Gap(4),
 
                                     // Badges and buttons
                                     Layout.Horizontal(
-                                        GetIssueTypeBadge(task.Type),
                                         new Badge($"{task.StoryPoints} pts").Primary(),
                                         new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
                                     )
