@@ -489,13 +489,17 @@ public class PlanningApp : ViewBase
                                     .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
                                     .OrderBy(x => x.Id)
                                     .Select(item => new Expandable(
-                                            header: Layout.Horizontal(
-                                                GetIssueTypeBadge(item.Type),
-                                                Text.Strong(item.Title).Width(Size.Grow()),
-                                                new Badge(item.Status.ToString()).Secondary(),
-                                                new Badge($"{item.StoryPoints} pts").Primary(),
-                                                new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Destructive().Small()
-                                            ),
+                                            header: Layout.Vertical(
+                                                // Title
+                                                Text.Strong(item.Title),
+                                                // Badges and buttons
+                                                Layout.Horizontal(
+                                                    GetIssueTypeBadge(item.Type),
+                                                    new Badge(item.Status.ToString()).Secondary(),
+                                                    new Badge($"{item.StoryPoints} pts").Primary(),
+                                                    new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Destructive().Small()
+                                                )
+                                            ).Gap(4),
                                             content: !string.IsNullOrEmpty(item.Description) ?
                                                 Text.P(item.Description) : Text.P("No description")
                                         )
@@ -506,7 +510,7 @@ public class PlanningApp : ViewBase
                         Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
                 ).Gap(4),
                 new Button("Archive Sprint", archiveSprint).Secondary()
-            ).Width(Size.Units(160));
+            ).Width(Size.Third());
     }
 
     // EPIC LIST VIEW: Shows only Epics (top-level items)
@@ -539,24 +543,28 @@ public class PlanningApp : ViewBase
                             var storiesCount = backlogItems.Value.Count(item => item.ParentId == epic.Id && item.Type == IssueType.Story);
 
                             return new Card(
-                                // Title and description
-                                Text.Strong("Epic: " + epic.Title).Width(Size.Grow()),
-                                Layout.Horizontal(
-                                    // Issue type badge
-                                    GetIssueTypeBadge(epic.Type),
+                                Layout.Vertical(
+                                    // Title
+                                    Text.Strong("Epic: " + epic.Title),
 
-                                    // Story count indicator
-                                    new Badge($"{storiesCount} stories").Secondary(),
+                                    // Badges and buttons
+                                    Layout.Horizontal(
+                                        // Issue type badge
+                                        GetIssueTypeBadge(epic.Type),
 
-                                    // Story points
-                                    new Badge($"{epic.StoryPoints} pts").Primary(),
+                                        // Story count indicator
+                                        new Badge($"{storiesCount} stories").Secondary(),
 
-                                    // Open Epic button
-                                    new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
+                                        // Story points
+                                        new Badge($"{epic.StoryPoints} pts").Primary(),
 
-                                    // Delete button
-                                    new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
-                                )
+                                        // Open Epic button
+                                        new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
+
+                                        // Delete button
+                                        new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
+                                    )
+                                ).Gap(4)
                             );
                         }).ToArray()
                 ).Gap(4)
@@ -748,21 +756,23 @@ public class PlanningApp : ViewBase
                                             {
                                                 bool taskInSprint = task.SprintId != null;
                                                 return new Card(
-                                                    Layout.Horizontal(
-                                                        GetIssueTypeBadge(task.Type),
-                                                        Text.P(task.Title)
-                                                            .Width(Size.Grow()),
-                                                        new Badge($"{task.StoryPoints} pts").Primary(),
-                                                        new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                                    ),
-                                                    !string.IsNullOrEmpty(task.Description) ? $"{task.Description}" : null
+                                                    Layout.Vertical(
+                                                        // Title
+                                                        Text.P(task.Title),
 
+                                                        // Badges and buttons
+                                                        Layout.Horizontal(
+                                                            GetIssueTypeBadge(task.Type),
+                                                            new Badge($"{task.StoryPoints} pts").Primary(),
+                                                            new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
+                                                        )
+                                                    ).Gap(4)
                                                 );
                                             }).ToArray()
                                         ).Gap(4)
                                     ).Gap(4)
                                 )
-                            ).Width(Size.Units(220));
+                            ).Width(Size.Units(185));
                         }).ToArray()
                 ).Gap(4)
         );
@@ -818,16 +828,17 @@ public class PlanningApp : ViewBase
                             bool isInSprint = task.SprintId != null;
 
                             return new Card(
-                                Layout.Horizontal(
-                                    GetIssueTypeBadge(task.Type),
+                                Layout.Vertical(
+                                    // Title
+                                    Text.Strong(task.Title),
 
-                                    Text.Strong(!string.IsNullOrEmpty(task.Description) ?
-                                        $"{task.Title} - {task.Description}" : task.Title)
-                                        .Width(Size.Grow()),
-
-                                    new Badge($"{task.StoryPoints} pts").Primary(),
-                                    new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                )
+                                    // Badges and buttons
+                                    Layout.Horizontal(
+                                        GetIssueTypeBadge(task.Type),
+                                        new Badge($"{task.StoryPoints} pts").Primary(),
+                                        new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
+                                    )
+                                ).Gap(4)
                             );
                         }).ToArray()
                 ).Gap(4)

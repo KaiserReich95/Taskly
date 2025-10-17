@@ -135,7 +135,7 @@ public class SprintArchiveApp : ViewBase
             archivedSprints.Value.Length == 0 ?
                 new Card(
                     Text.P("No archived sprints yet. Archive a sprint from the Backlog or Sprint Board tab to see it here.")
-                ) :
+                ).Width(Size.Fit()) :
                 Layout.Vertical(
                     archivedSprints.Value
                         .OrderByDescending(s => s.Id)
@@ -191,7 +191,7 @@ public class SprintArchiveApp : ViewBase
                             );
                         })
                         .ToArray()
-                ).Gap(12)
-        ).Gap(16);
+                ).Gap(6).Width(Size.Half())
+        ).Gap(10);
     }
 }
