@@ -715,11 +715,10 @@ public class PlanningApp : ViewBase
 
                             return new Card(
                                 Layout.Vertical(
+                                    Text.Strong("Story: " + story.Title).Width(Size.Grow()),
                                     // Story header
                                     Layout.Horizontal(
                                         GetIssueTypeBadge(story.Type),
-
-                                        Text.Strong(story.Title).Width(Size.Grow()),
 
                                         new Badge($"{tasks.Length} tasks").Secondary(),
                                         new Badge($"{story.StoryPoints} pts").Primary(),
@@ -763,7 +762,7 @@ public class PlanningApp : ViewBase
                                         ).Gap(4)
                                     ).Gap(4)
                                 )
-                            ).Width(Size.Units(200));
+                            ).Width(Size.Units(220));
                         }).ToArray()
                 ).Gap(4)
         );
