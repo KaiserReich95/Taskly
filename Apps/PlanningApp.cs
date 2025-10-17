@@ -425,8 +425,6 @@ public class PlanningApp : ViewBase
                     }).Destructive().Small()
                 ).Gap(8),
 
-                new Button("+ Add Epic", () => { newIssueType.Set(IssueType.Epic); isAddItemModalOpen.Set(true); }).Primary(),
-
                 isAddItemModalOpen.Value ?
                     new FloatingPanel(
                         new Card(
@@ -447,8 +445,9 @@ public class PlanningApp : ViewBase
                     // Sprint management section
                     BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
 
-                    BuildEpicListViewSection(backlogItems, openedEpic, currentSprint, archivedSprints)
-                );
+                    BuildEpicListViewSection(backlogItems, openedEpic, currentSprint, archivedSprints, isAddItemModalOpen, newIssueType)
+            ).Gap(4);
+                
     }
 
     // Sprint management section - shown in all views
@@ -469,7 +468,7 @@ public class PlanningApp : ViewBase
                     newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
                     new Button("Create Sprint", createSprint).Primary()
                 )
-            ) :
+            ).Width(Size.Units(100)) :
             new Card(
                 Layout.Vertical(
                     Layout.Horizontal(
@@ -478,8 +477,7 @@ public class PlanningApp : ViewBase
                             !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
                                 Text.P($"Goal: {currentSprint.Value.Goal}") : null,
                             Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
-                        ).Width(Size.Grow()),
-                        new Button("Archive Sprint", archiveSprint).Secondary()
+                        ).Width(Size.Grow())
                     ),
 
                     // Display sprint items
@@ -490,27 +488,29 @@ public class PlanningApp : ViewBase
                                 backlogItems.Value
                                     .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
                                     .OrderBy(x => x.Id)
-                                    .Select(item => new Card(
-                                        Layout.Horizontal(
-                                            GetIssueTypeBadge(item.Type),
-                                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
-                                                $"{item.Title} - {item.Description}" : item.Title)
-                                                .Width(Size.Grow()),
-                                            new Badge(item.Status.ToString()).Secondary(),
-                                            new Badge($"{item.StoryPoints} pts").Primary(),
-                                            new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Secondary().Small()
+                                    .Select(item => new Expandable(
+                                            header: Layout.Horizontal(
+                                                GetIssueTypeBadge(item.Type),
+                                                Text.Strong(item.Title).Width(Size.Grow()),
+                                                new Badge(item.Status.ToString()).Secondary(),
+                                                new Badge($"{item.StoryPoints} pts").Primary(),
+                                                new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Destructive().Small()
+                                            ),
+                                            content: !string.IsNullOrEmpty(item.Description) ?
+                                                Text.P(item.Description) : Text.P("No description")
                                         )
-                                    ))
+                                    )
                                     .ToArray()
                             ).Gap(4)
                         ).Gap(4) :
                         Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
-                ).Gap(4)
-            );
+                ).Gap(4),
+                new Button("Archive Sprint", archiveSprint).Secondary()
+            ).Width(Size.Units(160));
     }
 
     // EPIC LIST VIEW: Shows only Epics (top-level items)
-    private object BuildEpicListViewSection(IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints)
+    private object BuildEpicListViewSection(IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints, IState<bool> isAddItemModalOpen, IState<IssueType> newIssueType)
     {
         // Get only Epics (items with no parent)
         var epics = backlogItems.Value.Where(item => item.Type == IssueType.Epic && item.ParentId == null).ToArray();
@@ -527,6 +527,7 @@ public class PlanningApp : ViewBase
 
         return Layout.Vertical(
             Text.H3($"Epics ({epics.Length})"),
+            new Button("+ Add Epic", () => { newIssueType.Set(IssueType.Epic); isAddItemModalOpen.Set(true); }).Primary(),
             epics.Length == 0 ?
                 new Card(Text.P("No epics yet. Click '+ Add Epic' to create your first epic.")) :
                 Layout.Vertical(
@@ -538,14 +539,11 @@ public class PlanningApp : ViewBase
                             var storiesCount = backlogItems.Value.Count(item => item.ParentId == epic.Id && item.Type == IssueType.Story);
 
                             return new Card(
+                                // Title and description
+                                Text.Strong("Epic: " + epic.Title).Width(Size.Grow()),
                                 Layout.Horizontal(
                                     // Issue type badge
                                     GetIssueTypeBadge(epic.Type),
-
-                                    // Title and description
-                                    Text.Strong(!string.IsNullOrEmpty(epic.Description) ?
-                                        $"{epic.Title} - {epic.Description}" : epic.Title)
-                                        .Width(Size.Grow()),
 
                                     // Story count indicator
                                     new Badge($"{storiesCount} stories").Secondary(),
@@ -562,7 +560,7 @@ public class PlanningApp : ViewBase
                             );
                         }).ToArray()
                 ).Gap(4)
-        );
+        ).Gap(4).Width(Size.Units(110));
     }
 
     // EPIC DETAIL VIEW: Shows Stories within an Epic
@@ -690,28 +688,23 @@ public class PlanningApp : ViewBase
         return Layout.Vertical(
             // Breadcrumb navigation
             Layout.Horizontal(
-                new Button("← Back to Epics", () => openedEpic.Set((BacklogItem?)null)).Secondary().Small(),
-                Text.H3($"Epic: {epic.Title}")
+                new Button("← Back to Epics", () => openedEpic.Set((BacklogItem?)null)).Secondary().Small()
             ),
-
             // Epic details
-            new Card(
-                Layout.Vertical(
-                    !string.IsNullOrEmpty(epic.Description) ? Text.P(epic.Description) : null,
-                    Layout.Horizontal(
-                        new Badge($"{epic.StoryPoints} pts").Primary(),
-                        new Badge($"{stories.Length} stories").Secondary()
-                    ).Gap(4)
-                )
-            ),
-
-            // Add Story button
-            new Button("+ Add Story", () => { newIssueType.Set(IssueType.Story); isAddItemModalOpen.Set(true); }).Primary(),
+            Text.H3($"Epic: {epic.Title}"),
+            Layout.Vertical(
+                !string.IsNullOrEmpty(epic.Description) ? Text.P("Goal: " + epic.Description) : null,
+                Layout.Horizontal(
+                    new Badge($"{epic.StoryPoints} pts").Primary(),
+                    new Badge($"{stories.Length} stories").Secondary()
+                ).Gap(4)
+            ).Width(Size.Units(100)),
 
             // Stories list
             Text.H3($"Stories ({stories.Length})"),
+            new Button("+ Add Story", () => { newIssueType.Set(IssueType.Story); isAddItemModalOpen.Set(true); }).Primary(),
             stories.Length == 0 ?
-                new Card(Text.P("No stories yet. Click '+ Add Story' to create a story.")) :
+                new Card(Text.P("No stories yet. Click '+ Add Story' to create a story.")).Width(Size.Units(100)) :
                 Layout.Vertical(
                     stories
                         .OrderBy(x => x.Id)
@@ -726,9 +719,7 @@ public class PlanningApp : ViewBase
                                     Layout.Horizontal(
                                         GetIssueTypeBadge(story.Type),
 
-                                        Text.Strong(!string.IsNullOrEmpty(story.Description) ?
-                                            $"{story.Title} - {story.Description}" : story.Title)
-                                            .Width(Size.Grow()),
+                                        Text.Strong(story.Title).Width(Size.Grow()),
 
                                         new Badge($"{tasks.Length} tasks").Secondary(),
                                         new Badge($"{story.StoryPoints} pts").Primary(),
@@ -748,6 +739,9 @@ public class PlanningApp : ViewBase
                                         new Button("Delete", () => DeleteItem(story.Id)).Destructive().Small()
                                     ),
 
+                                    // Story description
+                                    !string.IsNullOrEmpty(story.Description) ? Text.P(story.Description) : null,
+
                                     // Nested Tasks/Bugs - Always show section
                                     Layout.Vertical(
                                         Layout.Vertical(
@@ -757,18 +751,19 @@ public class PlanningApp : ViewBase
                                                 return new Card(
                                                     Layout.Horizontal(
                                                         GetIssueTypeBadge(task.Type),
-                                                        Text.P(!string.IsNullOrEmpty(task.Description) ?
-                                                            $"{task.Title} - {task.Description}" : task.Title)
+                                                        Text.P(task.Title)
                                                             .Width(Size.Grow()),
                                                         new Badge($"{task.StoryPoints} pts").Primary(),
                                                         new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                                    )
+                                                    ),
+                                                    !string.IsNullOrEmpty(task.Description) ? $"{task.Description}" : null
+
                                                 );
                                             }).ToArray()
                                         ).Gap(4)
                                     ).Gap(4)
                                 )
-                            );
+                            ).Width(Size.Units(200));
                         }).ToArray()
                 ).Gap(4)
         );
