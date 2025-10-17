@@ -425,8 +425,6 @@ public class PlanningApp : ViewBase
                     }).Destructive().Small()
                 ).Gap(8),
 
-                new Button("+ Add Epic", () => { newIssueType.Set(IssueType.Epic); isAddItemModalOpen.Set(true); }).Primary(),
-
                 isAddItemModalOpen.Value ?
                     new FloatingPanel(
                         new Card(
@@ -447,7 +445,7 @@ public class PlanningApp : ViewBase
                     // Sprint management section
                     BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
 
-                    BuildEpicListViewSection(backlogItems, openedEpic, currentSprint, archivedSprints)
+                    BuildEpicListViewSection(backlogItems, openedEpic, currentSprint, archivedSprints, isAddItemModalOpen, newIssueType)
                 );
     }
 
@@ -462,55 +460,53 @@ public class PlanningApp : ViewBase
         Action<int> removeItemFromSprint)
     {
         return currentSprint.Value == null ?
-            new Card(
-                Layout.Vertical(
-                    Text.H3("Create New Sprint"),
-                    newSprintName.ToTextInput().Placeholder("Sprint name (e.g., Sprint 1)"),
-                    newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
-                    new Button("Create Sprint", createSprint).Primary()
-                )
+            Layout.Horizontal(
+                new Card(
+                    Layout.Vertical(
+                        Text.H3("Create New Sprint"),
+                        newSprintName.ToTextInput().Placeholder("Sprint name (e.g., Sprint 1)"),
+                        newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
+                        new Button("Create Sprint", createSprint).Primary()
+                    )
+                ).Width(Size.Auto())
             ) :
-            new Card(
-                Layout.Vertical(
-                    Layout.Horizontal(
-                        Layout.Vertical(
-                            Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
-                            !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                            Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
-                        ).Width(Size.Grow()),
-                        new Button("Archive Sprint", archiveSprint).Secondary()
-                    ),
+            Layout.Horizontal(
+                new Card(
+                    Layout.Vertical(
+                        Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
+                        !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                            Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                        Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}"),
 
-                    // Display sprint items
-                    currentSprint.Value.ItemIds.Length > 0 ?
-                        Layout.Vertical(
-                            Text.H4("Sprint Items:"),
+                        // Display sprint items
+                        currentSprint.Value.ItemIds.Length > 0 ?
                             Layout.Vertical(
-                                backlogItems.Value
-                                    .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
-                                    .OrderBy(x => x.Id)
-                                    .Select(item => new Card(
-                                        Layout.Horizontal(
-                                            GetIssueTypeBadge(item.Type),
-                                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
-                                                $"{item.Title} - {item.Description}" : item.Title)
-                                                .Width(Size.Grow()),
-                                            new Badge(item.Status.ToString()).Secondary(),
-                                            new Badge($"{item.StoryPoints} pts").Primary(),
-                                            new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Secondary().Small()
-                                        )
-                                    ))
-                                    .ToArray()
-                            ).Gap(4)
-                        ).Gap(4) :
-                        Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
-                ).Gap(4)
+                                Text.H4("Sprint Items:"),
+                                Layout.Vertical(
+                                    backlogItems.Value
+                                        .Where(item => currentSprint.Value.ItemIds.Contains(item.Id))
+                                        .OrderBy(x => x.Id)
+                                        .Select(item => new Card(
+                                            Layout.Horizontal(
+                                                GetIssueTypeBadge(item.Type),
+                                                Text.Strong(item.Title),
+                                                new Badge(item.Status.ToString()).Secondary(),
+                                                new Badge($"{item.StoryPoints} pts").Primary(),
+                                                new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Secondary().Small()
+                                            )
+                                        ).Width(Size.Units(125)))
+                                        .ToArray()
+                                ).Gap(4)
+                            ).Gap(4) :
+                            Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
+                    ).Gap(4),
+                    new Button("Archive Sprint", archiveSprint).Secondary()
+                ).Width(Size.Units(125))
             );
     }
 
     // EPIC LIST VIEW: Shows only Epics (top-level items)
-    private object BuildEpicListViewSection(IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints)
+    private object BuildEpicListViewSection(IState<ImmutableArray<BacklogItem>> backlogItems, IState<BacklogItem?> openedEpic, IState<Sprint> currentSprint, IState<ImmutableArray<Sprint>> archivedSprints, IState<bool> isAddItemModalOpen, IState<IssueType> newIssueType)
     {
         // Get only Epics (items with no parent)
         var epics = backlogItems.Value.Where(item => item.Type == IssueType.Epic && item.ParentId == null).ToArray();
@@ -527,8 +523,11 @@ public class PlanningApp : ViewBase
 
         return Layout.Vertical(
             Text.H3($"Epics ({epics.Length})"),
+            new Button("+ Add Epic", () => { newIssueType.Set(IssueType.Epic); isAddItemModalOpen.Set(true); }).Primary(),
             epics.Length == 0 ?
-                new Card(Text.P("No epics yet. Click '+ Add Epic' to create your first epic.")) :
+                Layout.Horizontal(
+                    new Card(Text.P("No epics yet. Click '+ Add Epic' to create your first epic.")).Width(Size.Auto())
+                ) :
                 Layout.Vertical(
                     epics
                         .OrderBy(x => x.Id)
@@ -537,28 +536,28 @@ public class PlanningApp : ViewBase
                             bool isInSprint = epic.SprintId != null;
                             var storiesCount = backlogItems.Value.Count(item => item.ParentId == epic.Id && item.Type == IssueType.Story);
 
-                            return new Card(
-                                Layout.Horizontal(
-                                    // Issue type badge
-                                    GetIssueTypeBadge(epic.Type),
+                            // Note: Card width is fixed. Text that exceeds this width may overflow.
+                            // Keep epic titles and descriptions concise.
+                            return Layout.Horizontal(
+                                new Card(
+                                    Layout.Vertical(
+                                        // Title with "Epic:" prefix
+                                        Text.Strong($"Epic: {epic.Title}"),
 
-                                    // Title and description
-                                    Text.Strong(!string.IsNullOrEmpty(epic.Description) ?
-                                        $"{epic.Title} - {epic.Description}" : epic.Title)
-                                        .Width(Size.Grow()),
-
-                                    // Story count indicator
-                                    new Badge($"{storiesCount} stories").Secondary(),
-
-                                    // Story points
-                                    new Badge($"{epic.StoryPoints} pts").Primary(),
-
-                                    // Open Epic button
-                                    new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
-
-                                    // Delete button
-                                    new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
-                                )
+                                        // Description
+                                        Layout.Horizontal(
+                                            !string.IsNullOrEmpty(epic.Description) ?
+                                                Text.P(epic.Description) : null
+                                        ).Width(Size.Units(1)),
+                                        // Badges and buttons row
+                                        Layout.Horizontal(
+                                            new Badge($"{storiesCount} stories").Secondary(),
+                                            new Badge($"{epic.StoryPoints} pts").Primary(),
+                                            new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
+                                            new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
+                                        ).Gap(4)
+                                    ).Gap(4)
+                                ).Width(Size.Units(100))
                             );
                         }).ToArray()
                 ).Gap(4)
@@ -695,14 +694,16 @@ public class PlanningApp : ViewBase
             ),
 
             // Epic details
-            new Card(
-                Layout.Vertical(
-                    !string.IsNullOrEmpty(epic.Description) ? Text.P(epic.Description) : null,
-                    Layout.Horizontal(
-                        new Badge($"{epic.StoryPoints} pts").Primary(),
-                        new Badge($"{stories.Length} stories").Secondary()
-                    ).Gap(4)
-                )
+            Layout.Horizontal(
+                new Card(
+                    Layout.Vertical(
+                        !string.IsNullOrEmpty(epic.Description) ? Text.P(epic.Description) : null,
+                        Layout.Horizontal(
+                            new Badge($"{epic.StoryPoints} pts").Primary(),
+                            new Badge($"{stories.Length} stories").Secondary()
+                        ).Gap(4)
+                    )
+                ).Width(Size.Auto())
             ),
 
             // Add Story button
@@ -711,7 +712,9 @@ public class PlanningApp : ViewBase
             // Stories list
             Text.H3($"Stories ({stories.Length})"),
             stories.Length == 0 ?
-                new Card(Text.P("No stories yet. Click '+ Add Story' to create a story.")) :
+                Layout.Horizontal(
+                    new Card(Text.P("No stories yet. Click '+ Add Story' to create a story.")).Width(Size.Auto())
+                ) :
                 Layout.Vertical(
                     stories
                         .OrderBy(x => x.Id)
@@ -720,33 +723,34 @@ public class PlanningApp : ViewBase
                             bool isInSprint = story.SprintId != null;
                             var tasks = backlogItems.Value.Where(item => item.ParentId == story.Id && (item.Type == IssueType.Task || item.Type == IssueType.Bug)).ToArray();
 
-                            return new Card(
-                                Layout.Vertical(
-                                    // Story header
-                                    Layout.Horizontal(
-                                        GetIssueTypeBadge(story.Type),
+                            return Layout.Horizontal(
+                                new Card(
+                                    Layout.Vertical(
+                                        // Story header
+                                        Layout.Horizontal(
+                                            GetIssueTypeBadge(story.Type),
 
-                                        Text.Strong(!string.IsNullOrEmpty(story.Description) ?
-                                            $"{story.Title} - {story.Description}" : story.Title)
-                                            .Width(Size.Grow()),
+                                            Text.Strong(story.Title),
 
-                                        new Badge($"{tasks.Length} tasks").Secondary(),
-                                        new Badge($"{story.StoryPoints} pts").Primary(),
+                                            new Badge($"{tasks.Length} tasks").Secondary(),
+                                            new Badge($"{story.StoryPoints} pts").Primary(),
 
-                                        isInSprint ?
-                                            new Badge("In Sprint").Secondary() :
-                                            new Badge("Backlog").Outline(),
+                                            isInSprint ?
+                                                new Badge("In Sprint").Secondary() :
+                                                new Badge("Backlog").Outline(),
 
-                                        new Button("+ Add Task/Bug", () => { addTaskToStory.Set(story); newIssueType.Set(IssueType.Task); }).Primary().Small(),
+                                            new Button("+ Add Task/Bug", () => { addTaskToStory.Set(story); newIssueType.Set(IssueType.Task); }).Primary().Small(),
 
-                                        !isInSprint && currentSprint.Value != null ?
-                                            new Button("Add to Sprint", () => AddItemToSprint(story.Id)).Primary().Small() :
-                                        isInSprint ?
-                                            new Button("Remove from Sprint", () => RemoveItemFromSprint(story.Id)).Secondary().Small() :
-                                        null,
+                                            !isInSprint && currentSprint.Value != null ?
+                                                new Button("Add to Sprint", () => AddItemToSprint(story.Id)).Primary().Small() :
+                                            isInSprint ?
+                                                new Button("Remove from Sprint", () => RemoveItemFromSprint(story.Id)).Secondary().Small() :
+                                            null,
 
-                                        new Button("Delete", () => DeleteItem(story.Id)).Destructive().Small()
-                                    ),
+                                            new Button("Delete", () => DeleteItem(story.Id)).Destructive().Small()
+                                        ),
+
+                                    Text.Small(!string.IsNullOrEmpty(story.Description) ? "Goal: " + story.Description : ""),
 
                                     // Nested Tasks/Bugs - Always show section
                                     Layout.Vertical(
@@ -754,20 +758,22 @@ public class PlanningApp : ViewBase
                                             tasks.OrderBy(t => t.Id).Select(task =>
                                             {
                                                 bool taskInSprint = task.SprintId != null;
-                                                return new Card(
-                                                    Layout.Horizontal(
-                                                        GetIssueTypeBadge(task.Type),
-                                                        Text.P(!string.IsNullOrEmpty(task.Description) ?
-                                                            $"{task.Title} - {task.Description}" : task.Title)
-                                                            .Width(Size.Grow()),
-                                                        new Badge($"{task.StoryPoints} pts").Primary(),
-                                                        new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                                    )
+                                                return Layout.Horizontal(
+                                                    new Card(
+                                                        Layout.Horizontal(
+                                                            GetIssueTypeBadge(task.Type),
+                                                            Text.P(task.Title),
+                                                            new Badge($"{task.StoryPoints} pts").Primary(),
+                                                            new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
+                                                        ),
+                                                        Text.Small(!string.IsNullOrEmpty(task.Description) ? "Goal: " + task.Description : "")
+                                                    ).Width(Size.Auto())
                                                 );
                                             }).ToArray()
                                         ).Gap(4)
                                     ).Gap(4)
                                 )
+                                ).Width(Size.Auto())
                             );
                         }).ToArray()
                 ).Gap(4)
@@ -798,15 +804,17 @@ public class PlanningApp : ViewBase
             ),
 
             // Story details
-            new Card(
-                Layout.Vertical(
-                    Text.Small($"Epic: {epic.Title}"),
-                    !string.IsNullOrEmpty(story.Description) ? Text.P(story.Description) : null,
-                    Layout.Horizontal(
-                        new Badge($"{story.StoryPoints} pts").Primary(),
-                        new Badge($"{tasks.Length} tasks/bugs").Secondary()
-                    ).Gap(4)
-                )
+            Layout.Horizontal(
+                new Card(
+                    Layout.Vertical(
+                        Text.Small($"Epic: {epic.Title}"),
+                        !string.IsNullOrEmpty(story.Description) ? Text.P(story.Description) : null,
+                        Layout.Horizontal(
+                            new Badge($"{story.StoryPoints} pts").Primary(),
+                            new Badge($"{tasks.Length} tasks/bugs").Secondary()
+                        ).Gap(4)
+                    )
+                ).Width(Size.Auto())
             ),
 
             // Add Task/Bug button
@@ -815,7 +823,9 @@ public class PlanningApp : ViewBase
             // Tasks and Bugs list
             Text.H3($"Tasks & Bugs ({tasks.Length})"),
             tasks.Length == 0 ?
-                new Card(Text.P("No tasks or bugs yet. Click '+ Add Task/Bug' to create a task or bug.")) :
+                Layout.Horizontal(
+                    new Card(Text.P("No tasks or bugs yet. Click '+ Add Task/Bug' to create a task or bug.")).Width(Size.Auto())
+                ) :
                 Layout.Vertical(
                     tasks
                         .OrderBy(x => x.Id)
@@ -823,17 +833,21 @@ public class PlanningApp : ViewBase
                         {
                             bool isInSprint = task.SprintId != null;
 
-                            return new Card(
-                                Layout.Horizontal(
-                                    GetIssueTypeBadge(task.Type),
+                            return Layout.Horizontal(
+                                new Card(
+                                    Layout.Vertical(
+                                        Layout.Horizontal(
+                                            GetIssueTypeBadge(task.Type),
 
-                                    Text.Strong(!string.IsNullOrEmpty(task.Description) ?
-                                        $"{task.Title} - {task.Description}" : task.Title)
-                                        .Width(Size.Grow()),
+                                            Text.Strong(task.Title),
 
-                                    new Badge($"{task.StoryPoints} pts").Primary(),
-                                    new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                )
+                                            new Badge($"{task.StoryPoints} pts").Primary(),
+                                            new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
+                                        ),
+                                        !string.IsNullOrEmpty(task.Description) ?
+                                            Text.P(task.Description) : null
+                                    ).Gap(4)
+                                ).Width(Size.Auto())
                             );
                         }).ToArray()
                 ).Gap(4)

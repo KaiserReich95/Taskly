@@ -120,7 +120,9 @@ public class SprintBoardApp : ViewBase
 
         if (isLoading.Value)
         {
-            return new Card(Text.P("Loading..."));
+            return Layout.Horizontal(
+                new Card(Text.P("Loading...")).Width(Size.Auto())
+            );
         }
 
         // Get all items in sprint (stories only, since only stories are added to sprints)
@@ -147,7 +149,7 @@ public class SprintBoardApp : ViewBase
                     // Header with issue type and title
                     Layout.Horizontal(
                         GetIssueTypeBadge(task.Type),
-                        Text.Strong(task.Title).Width(Size.Grow())
+                        Text.Strong(task.Title)
                     ),
 
                     // Description if available
@@ -171,7 +173,7 @@ public class SprintBoardApp : ViewBase
                         null
                     ).Gap(8)
                 ).Gap(8)
-            );
+            ).Width(Size.Units(100));
         }
 
         // Helper to build Epic/Story hierarchy with kanban columns inside each story
@@ -194,7 +196,7 @@ public class SprintBoardApp : ViewBase
                                 // Epic header
                                 Layout.Horizontal(
                                     GetIssueTypeBadge(IssueType.Epic),
-                                    Text.Strong(epic?.Title ?? "Unknown Epic").Width(Size.Grow())
+                                    Text.Strong(epic?.Title ?? "Unknown Epic")
                                 ),
 
                                 // Stories within epic
@@ -212,7 +214,7 @@ public class SprintBoardApp : ViewBase
                                                 // Story header
                                                 Layout.Horizontal(
                                                     GetIssueTypeBadge(IssueType.Story),
-                                                    Text.Strong(story.Title).Width(Size.Grow())
+                                                    Text.Strong(story.Title)
                                                 ),
 
                                                 // Kanban columns for this story's tasks
@@ -225,7 +227,7 @@ public class SprintBoardApp : ViewBase
                                                                 todoTasks.Select(BuildTaskCard).ToArray()
                                                             ).Gap(4) :
                                                             Text.Small("No tasks")
-                                                    ).Gap(4).Width(Size.Grow()),
+                                                    ).Gap(4),
 
                                                     // In Progress Column
                                                     Layout.Vertical(
@@ -235,7 +237,7 @@ public class SprintBoardApp : ViewBase
                                                                 inProgressTasks.Select(BuildTaskCard).ToArray()
                                                             ).Gap(4) :
                                                             Text.Small("No tasks")
-                                                    ).Gap(4).Width(Size.Grow()),
+                                                    ).Gap(4),
 
                                                     // Done Column
                                                     Layout.Vertical(
@@ -245,17 +247,19 @@ public class SprintBoardApp : ViewBase
                                                                 doneTasks.Select(BuildTaskCard).ToArray()
                                                             ).Gap(4) :
                                                             Text.Small("No tasks")
-                                                    ).Gap(4).Width(Size.Grow())
+                                                    ).Gap(4)
                                                 ).Gap(8)
                                             ).Gap(8)
-                                        );
+                                        ).Width(Size.Units(250));
                                     }).ToArray()
                                 ).Gap(4)
                             ).Gap(8)
-                        );
+                        ).Width(Size.Units(300));
                     }).ToArray()
                 ).Gap(8) :
-                new Card(Text.P("No stories in sprint"));
+                Layout.Horizontal(
+                    new Card(Text.P("No stories in sprint")).Width(Size.Auto())
+                );
         }
 
         Badge GetIssueTypeBadge(IssueType type)
@@ -275,32 +279,34 @@ public class SprintBoardApp : ViewBase
 
             // Show current sprint info or message if no sprint
             currentSprint.Value == null ?
-                new Card(
-                    Text.P("No active sprint. Create a sprint in the Planning app to get started.")
+                Layout.Horizontal(
+                    new Card(
+                        Text.P("No active sprint. Create a sprint in the Planning app to get started.")
+                    ).Width(Size.Auto())
                 ) :
-                new Card(
-                    Layout.Vertical(
-                        Layout.Horizontal(
-                            Layout.Vertical(
-                                Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
-                                !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                    Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                                Text.Small($"Tasks/Bugs: {allTasks.Length} | " +
-                                          $"To Do: {todoTasks.Length} | " +
-                                          $"In Progress: {inProgressTasks.Length} | " +
-                                          $"Done: {doneTasks.Length}")
-                            ).Width(Size.Grow()),
+                Layout.Horizontal(
+                    new Card(
+                        Layout.Vertical(
+                            Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
+                            !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                                Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                            Text.Small($"Tasks/Bugs: {allTasks.Length} | " +
+                                      $"To Do: {todoTasks.Length} | " +
+                                      $"In Progress: {inProgressTasks.Length} | " +
+                                      $"Done: {doneTasks.Length}"),
                             new Button("Archive Sprint", ArchiveSprint).Secondary()
                         )
-                    )
+                    ).Width(Size.Auto())
                 ),
 
             // Hierarchical Kanban board with columns inside each story
             currentSprint.Value != null && sprintStories.Length > 0 ?
                 BuildHierarchyPanel() :
             currentSprint.Value != null ?
-                new Card(
-                    Text.P("No stories in sprint yet. Add stories from the Planning app.")
+                Layout.Horizontal(
+                    new Card(
+                        Text.P("No stories in sprint yet. Add stories from the Planning app.")
+                    ).Width(Size.Auto())
                 ) : null
         ).Gap(16);
     }

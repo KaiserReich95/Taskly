@@ -114,7 +114,9 @@ public class SprintArchiveApp : ViewBase
 
         if (isLoading.Value)
         {
-            return new Card(Text.P("Loading..."));
+            return Layout.Horizontal(
+                new Card(Text.P("Loading...")).Width(Size.Auto())
+            );
         }
 
         Badge GetIssueTypeBadge(IssueType type)
@@ -133,8 +135,10 @@ public class SprintArchiveApp : ViewBase
             Text.H2("Sprint Archive"),
 
             archivedSprints.Value.Length == 0 ?
-                new Card(
-                    Text.P("No archived sprints yet. Archive a sprint from the Backlog or Sprint Board tab to see it here.")
+                Layout.Horizontal(
+                    new Card(
+                        Text.P("No archived sprints yet. Archive a sprint from the Backlog or Sprint Board tab to see it here.")
+                    ).Width(Size.Auto())
                 ) :
                 Layout.Vertical(
                     archivedSprints.Value
@@ -149,45 +153,44 @@ public class SprintArchiveApp : ViewBase
                             var totalPoints = sprintItems.Sum(item => item.StoryPoints);
                             var completedPoints = sprintItems.Where(item => item.Status == ItemStatus.Done).Sum(item => item.StoryPoints);
 
-                            return new Card(
-                                Layout.Vertical(
-                                    Layout.Horizontal(
-                                        Layout.Vertical(
-                                            Text.H3($"{sprint.Name}"),
-                                            !string.IsNullOrEmpty(sprint.Goal) ?
-                                                Text.P($"Goal: {sprint.Goal}") : null,
-                                            Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}")
-                                        ).Width(Size.Grow()),
-                                        new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary()
-                                    ),
+                            return Layout.Horizontal(
+                                new Card(
+                                    Layout.Vertical(
+                                        Text.H3($"{sprint.Name}"),
+                                        !string.IsNullOrEmpty(sprint.Goal) ?
+                                            Text.P($"Goal: {sprint.Goal}") : null,
+                                        Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}"),
+                                        new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary(),
 
-                                    Layout.Horizontal(
-                                        new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
-                                        new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
-                                    ).Gap(4),
+                                        Layout.Horizontal(
+                                            new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
+                                            new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
+                                        ).Gap(4),
 
-                                    // Display sprint items
-                                    sprintItems.Length > 0 ?
-                                        Layout.Vertical(
-                                            Text.H4("Sprint Items:"),
+                                        // Display sprint items
+                                        sprintItems.Length > 0 ?
                                             Layout.Vertical(
-                                                sprintItems
-                                                    .OrderBy(item => item.Id)
-                                                    .Select(item => new Card(
-                                                        Layout.Horizontal(
-                                                            GetIssueTypeBadge(item.Type),
-                                                            Text.Strong(!string.IsNullOrEmpty(item.Description) ?
-                                                                $"{item.Title} - {item.Description}" : item.Title)
-                                                                .Width(Size.Grow()),
-                                                            new Badge(item.Status.ToString()).Secondary(),
-                                                            new Badge($"{item.StoryPoints} pts").Primary()
-                                                        )
-                                                    ))
-                                                    .ToArray()
-                                            ).Gap(2)
-                                        ).Gap(4) :
-                                        Text.P("No items in this sprint.")
-                                ).Gap(4)
+                                                Text.H4("Sprint Items:"),
+                                                Layout.Vertical(
+                                                    sprintItems
+                                                        .OrderBy(item => item.Id)
+                                                        .Select(item => Layout.Horizontal(
+                                                            new Card(
+                                                                Layout.Horizontal(
+                                                                    GetIssueTypeBadge(item.Type),
+                                                                    Text.Strong(!string.IsNullOrEmpty(item.Description) ?
+                                                                        $"{item.Title} - {item.Description}" : item.Title),
+                                                                    new Badge(item.Status.ToString()).Secondary(),
+                                                                    new Badge($"{item.StoryPoints} pts").Primary()
+                                                                )
+                                                            ).Width(Size.Auto())
+                                                        ))
+                                                        .ToArray()
+                                                ).Gap(2)
+                                            ).Gap(4) :
+                                            Text.P("No items in this sprint.")
+                                    ).Gap(4)
+                                ).Width(Size.Units(100))
                             );
                         })
                         .ToArray()
