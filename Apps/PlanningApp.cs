@@ -330,6 +330,26 @@ public class PlanningApp : ViewBase
             }
         }
 
+        async void DeleteSprint(IState<Sprint> sprint)
+        {
+            if (sprint.Value != null)
+            {
+                // Delete the sprint from database
+                InitDatabase.DeleteSprint(sprint.Value.Id);
+
+                // Also update all items in the sprint to remove sprint reference
+                var itemsInSprint = backlogItems.Value.Where(item => item.SprintId == sprint.Value.Id).ToArray();
+                foreach (var item in itemsInSprint)
+                {
+                    var updated = item with { Status = ItemStatus.Backlog, SprintId = null };
+                    InitDatabase.UpdateBacklogItem(updated.ToBacklogItemModel());
+                }
+
+                // Reload data
+                await ReloadData();
+            }
+        }
+
         // Conditional rendering based on hierarchy navigation
         return openedStory.Value != null ?
             // STORY DETAIL VIEW: Show Tasks and Bugs within the Story
@@ -359,7 +379,7 @@ public class PlanningApp : ViewBase
                     ) : null,
 
                 // Sprint management section
-                BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
+                BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, DeleteSprint, RemoveItemFromSprint),
 
                 BuildStoryDetailView(openedStory.Value, openedEpic.Value!, backlogItems, openedEpic, openedStory, currentSprint, isAddItemModalOpen)
             ) :
@@ -410,7 +430,7 @@ public class PlanningApp : ViewBase
                     ) : null,
 
                 // Sprint management section
-                BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
+                BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, DeleteSprint, RemoveItemFromSprint),
 
                 BuildEpicDetailView(openedEpic.Value, backlogItems, openedEpic, openedStory, currentSprint, archivedSprints, isAddItemModalOpen, addTaskToStory, newIssueType, refreshSignal)
             ) :
@@ -432,7 +452,6 @@ public class PlanningApp : ViewBase
                                 Text.H3("Add Epic"),
                                 newTitle.ToTextInput().Placeholder("Enter title..."),
                                 newDescription.ToTextInput().Placeholder("Enter description..."),
-                                newStoryPoints.ToNumberInput().Min(1).Max(21),
                                 Text.P($"Type: Epic"),
                                 Layout.Horizontal(
                                     new Button("Cancel", () => isAddItemModalOpen.Set(false)).Secondary(),
@@ -443,7 +462,7 @@ public class PlanningApp : ViewBase
                     ) : null,
 
                     // Sprint management section
-                    BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, RemoveItemFromSprint),
+                    BuildSprintManagementSection(currentSprint, backlogItems, newSprintName, newSprintGoal, CreateSprint, ArchiveSprint, DeleteSprint, RemoveItemFromSprint),
 
                     BuildEpicListViewSection(backlogItems, openedEpic, currentSprint, archivedSprints, isAddItemModalOpen, newIssueType)
             ).Gap(4);
@@ -458,6 +477,7 @@ public class PlanningApp : ViewBase
         IState<string> newSprintGoal,
         Func<Event<Button>, ValueTask> createSprint,
         Action archiveSprint,
+        Action<IState<Sprint>> deleteSprint,
         Action<int> removeItemFromSprint)
     {
         return currentSprint.Value == null ?
@@ -471,13 +491,12 @@ public class PlanningApp : ViewBase
             ).Width(Size.Units(100)) :
             new Card(
                 Layout.Vertical(
-                    Layout.Horizontal(
-                        Layout.Vertical(
-                            Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
-                            !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                            Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
-                        ).Width(Size.Grow())
+                    // Sprint info (full width)
+                    Layout.Vertical(
+                        Text.H3($"Current Sprint: {currentSprint.Value.Name}"),
+                        !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
+                            Text.P($"Goal: {currentSprint.Value.Goal}") : null,
+                        Text.Small($"Items in sprint: {currentSprint.Value.ItemIds.Length}")
                     ),
 
                     // Display sprint items
@@ -499,17 +518,26 @@ public class PlanningApp : ViewBase
                                                     new Badge($"{item.StoryPoints} pts").Primary(),
                                                     new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Destructive().Small()
                                                 )
-                                            ).Gap(4),
+                                            ).Gap(2),
                                             content: !string.IsNullOrEmpty(item.Description) ?
                                                 Text.P(item.Description) : Text.P("No description")
                                         )
                                     )
                                     .ToArray()
-                            ).Gap(4)
-                        ).Gap(4) :
-                        Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items.")
-                ).Gap(4),
-                new Button("Archive Sprint", archiveSprint).Secondary()
+                            )
+                        ).Gap(2) :
+                        Text.P("No items in sprint yet. Use 'Add to Sprint' buttons below to add items."),
+
+                    // Vertical spacer before buttons
+                    Layout.Vertical().Height(Size.Units(8)),
+
+                    // Buttons at bottom-right
+                    Layout.Horizontal(
+                        Text.P("").Width(Size.Grow()), // Spacer to push buttons right
+                        new Button("Archive Sprint", archiveSprint).Secondary(),
+                        new Button("Delete Sprint", () => deleteSprint(currentSprint)).Destructive()
+                    ).Gap(2)
+                ).Gap(2)
             ).Width(Size.Third());
     }
 
@@ -533,7 +561,7 @@ public class PlanningApp : ViewBase
             Text.H3($"Epics ({epics.Length})"),
             new Button("+ Add Epic", () => { newIssueType.Set(IssueType.Epic); isAddItemModalOpen.Set(true); }).Primary(),
             epics.Length == 0 ?
-                new Card(Text.P("No epics yet. Click '+ Add Epic' to create your first epic.")) :
+                new Card(Text.P("No epics yet. Click '+ Add Epic' to create your first epic.")).Width(Size.Fit()) :
                 Layout.Vertical(
                     epics
                         .OrderBy(x => x.Id)
@@ -544,19 +572,16 @@ public class PlanningApp : ViewBase
 
                             return new Card(
                                 Layout.Vertical(
-                                    // Title with badge (constrained width)
+                                    // Title with badge
                                     Layout.Horizontal(
                                         GetIssueTypeBadge(epic.Type),
                                         Text.Strong(epic.Title)
-                                    ).Gap(4).Width(Size.Auto()),
+                                    ),
 
-                                    // Badges and buttons (determines card width)
+                                    // Badges and buttons
                                     Layout.Horizontal(
                                         // Story count indicator
                                         new Badge($"{storiesCount} stories").Secondary(),
-
-                                        // Story points
-                                        new Badge($"{epic.StoryPoints} pts").Primary(),
 
                                         // Open Epic button
                                         new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
@@ -565,7 +590,7 @@ public class PlanningApp : ViewBase
                                         new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
                                     )
                                 ).Gap(4)
-                            ).Width(Size.Fit());
+                            ).Width(Size.MinContent());
                         }).ToArray()
                 ).Gap(4)
         ).Gap(4);
@@ -703,15 +728,15 @@ public class PlanningApp : ViewBase
             Layout.Vertical(
                 !string.IsNullOrEmpty(epic.Description) ? Text.P("Goal: " + epic.Description) : null,
                 Layout.Horizontal(
-                    new Badge($"{epic.StoryPoints} pts").Primary(),
                     new Badge($"{stories.Length} stories").Secondary()
-                ).Gap(4)
+                )
             ).Width(Size.Units(100)),
 
             // Stories list
-            Text.H3($"Stories ({stories.Length})"),
-            new Button("+ Add Story", () => { newIssueType.Set(IssueType.Story); isAddItemModalOpen.Set(true); }).Primary(),
-            stories.Length == 0 ?
+            Layout.Vertical(
+                Text.H3($"Stories ({stories.Length})"),
+                new Button("+ Add Story", () => { newIssueType.Set(IssueType.Story); isAddItemModalOpen.Set(true); }).Primary(),
+                stories.Length == 0 ?
                 new Card(Text.P("No stories yet. Click '+ Add Story' to create a story.")).Width(Size.Units(100)) :
                 Layout.Vertical(
                     stories
@@ -727,7 +752,7 @@ public class PlanningApp : ViewBase
                                     Layout.Horizontal(
                                         GetIssueTypeBadge(story.Type),
                                         Text.Strong(story.Title)
-                                    ).Gap(4),
+                                    ).Gap(4).Width(Size.Auto()),
 
                                     // Badges and buttons
                                     Layout.Horizontal(
@@ -750,8 +775,9 @@ public class PlanningApp : ViewBase
                                     ),
 
                                     // Story description
-                                    !string.IsNullOrEmpty(story.Description) ? Text.P(story.Description) : null,
 
+                                    !string.IsNullOrEmpty(story.Description) ? Text.P(story.Description).Width(Size.Auto()) : null,
+                                    
                                     // Nested Tasks/Bugs - Always show section
                                     Layout.Vertical(
                                         Layout.Vertical(
@@ -770,17 +796,21 @@ public class PlanningApp : ViewBase
                                                         Layout.Horizontal(
                                                             new Badge($"{task.StoryPoints} pts").Primary(),
                                                             new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                                        )
+                                                        ),
+
+                                                        // Task description
+                                                        !string.IsNullOrEmpty(task.Description) ? Text.P(task.Description) : null
                                                     ).Gap(4)
                                                 );
                                             }).ToArray()
                                         ).Gap(4)
                                     ).Gap(4)
                                 )
-                            ).Width(Size.Units(185));
+                            ).Width(Size.MinContent());
                         }).ToArray()
-                ).Gap(4)
-        );
+                )
+            )
+        ).Gap(0);
     }
 
     // STORY DETAIL VIEW: Shows Tasks and Bugs within a Story

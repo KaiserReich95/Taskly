@@ -112,6 +112,26 @@ public class SprintArchiveApp : ViewBase
             await refreshSignal.Send(true);
         }
 
+        async void DeleteSprint(Sprint sprint)
+        {
+            // Delete the sprint from database
+            InitDatabase.DeleteSprint(sprint.Id);
+
+            // Also update all items in the sprint to remove sprint reference
+            var itemsInSprint = backlogItems.Value.Where(item => item.SprintId == sprint.Id).ToArray();
+            foreach (var item in itemsInSprint)
+            {
+                var updated = item with { Status = ItemStatus.Backlog, SprintId = null };
+                InitDatabase.UpdateBacklogItem(updated.ToBacklogItemModel());
+            }
+
+            // Reload data
+            ReloadData();
+
+            // Notify other apps to refresh
+            await refreshSignal.Send(true);
+        }
+
         if (isLoading.Value)
         {
             return new Card(Text.P("Loading..."));
@@ -151,23 +171,24 @@ public class SprintArchiveApp : ViewBase
 
                             return new Card(
                                 Layout.Vertical(
+                                    // Buttons at top-right
                                     Layout.Horizontal(
-                                        Layout.Vertical(
-                                            Text.H3($"{sprint.Name}"),
-                                            !string.IsNullOrEmpty(sprint.Goal) ?
-                                                Text.P($"Goal: {sprint.Goal}") : null,
-                                            Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}")
-                                        ).Width(Size.Grow()),
-                                        new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary()
-                                    ),
+                                        Text.P("").Width(Size.Grow()), // Spacer to push buttons right
+                                        new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary(),
+                                        new Button("Delete Sprint", () => DeleteSprint(sprint)).Destructive()
+                                    ).Gap(2),
 
-                                    Layout.Horizontal(
-                                        new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
-                                        new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
-                                    ).Gap(4),
-
-                                    // Display sprint items
-                                    sprintItems.Length > 0 ?
+                                    // Sprint info (full width)
+                                    Layout.Vertical(
+                                        Text.H3($"{sprint.Name}"),
+                                        !string.IsNullOrEmpty(sprint.Goal) ?
+                                            Text.P($"Goal: {sprint.Goal}") : null,
+                                        Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}"),
+                                        Layout.Horizontal(
+                                            new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
+                                            new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
+                                        ).Gap(4),
+                                        sprintItems.Length > 0 ?
                                         Layout.Vertical(
                                             Text.H4("Sprint Items:"),
                                             Layout.Vertical(
@@ -192,7 +213,8 @@ public class SprintArchiveApp : ViewBase
                                             ).Gap(2)
                                         ).Gap(4) :
                                         Text.P("No items in this sprint.")
-                                ).Gap(4)
+                                    )
+                                ).Gap(0)
                             );
                         })
                         .ToArray()

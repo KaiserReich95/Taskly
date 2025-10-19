@@ -302,7 +302,7 @@ public class SprintBoardApp : ViewBase
             currentSprint.Value != null ?
                 new Card(
                     Text.P("No stories in sprint yet. Add stories from the Planning app.")
-                ) : null
+                ).Width(Size.Fit()) : null
         ).Gap(16);
     }
 }
