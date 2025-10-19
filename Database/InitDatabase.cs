@@ -310,6 +310,15 @@ public class InitDatabase
         return result;
     }
 
+    /// <summary>
+    /// Delete a sprint
+    /// </summary>
+    public static void DeleteSprint(int id)
+    {
+        using var connection = GetConnection();
+        connection.Execute("DELETE FROM sprints WHERE id = @Id", new { Id = id });
+    }
+
 }
 
 // Database Models (matching the schema)
