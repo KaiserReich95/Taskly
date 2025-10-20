@@ -2,22 +2,11 @@ namespace Taskly.Apps;
 using Taskly.Models;
 using Taskly.Database;
 using Taskly.Connections;
+using Taskly.Components;
 
 [App(icon: Icons.Calendar)]
 public class PlanningApp : ViewBase
 {
-
-    private static Badge GetIssueTypeBadge(IssueType type)
-    {
-        return type switch
-        {
-            IssueType.Task => new Badge("Task").Secondary(),
-            IssueType.Bug => new Badge("Bug").Destructive(),
-            IssueType.Story => new Badge("Story").Primary(),
-            IssueType.Epic => new Badge("Epic").Outline(),
-            _ => new Badge(type.ToString()).Secondary()
-        };
-    }
 
     public override object? Build()
     {
@@ -201,19 +190,27 @@ public class PlanningApp : ViewBase
             {
                 // Determine ParentId based on hierarchy context
                 int? parentId = null;
+                BacklogItem? parentItem = null;
+
                 if (addTaskToStory.Value != null)
                 {
                     parentId = addTaskToStory.Value.Id; // Task/Bug belongs to Story (modal within Epic view)
+                    parentItem = addTaskToStory.Value;
                 }
                 else if (openedStory.Value != null)
                 {
                     parentId = openedStory.Value.Id; // Task/Bug belongs to Story (Story detail view)
+                    parentItem = openedStory.Value;
                 }
                 else if (openedEpic.Value != null)
                 {
                     parentId = openedEpic.Value.Id; // Story belongs to Epic
+                    parentItem = openedEpic.Value;
                 }
                 // else: Epic has no parent
+
+                // If parent is in a sprint, inherit sprint status
+                var parentInSprint = parentItem?.SprintId != null;
 
                 var newItemModel = new BacklogItemModel
                 {
@@ -221,9 +218,10 @@ public class PlanningApp : ViewBase
                     Description = newDescription.Value,
                     StoryPoints = newStoryPoints.Value,
                     Priority = backlogItems.Value.Length + 1,
-                    Status = ItemStatus.Backlog.ToString(),
+                    Status = parentInSprint ? ItemStatus.Todo.ToString() : ItemStatus.Backlog.ToString(),
                     Type = newIssueType.Value.ToString(),
-                    ParentId = parentId
+                    ParentId = parentId,
+                    SprintId = parentItem?.SprintId
                 };
 
                 // Save to database
@@ -481,14 +479,7 @@ public class PlanningApp : ViewBase
         Action<int> removeItemFromSprint)
     {
         return currentSprint.Value == null ?
-            new Card(
-                Layout.Vertical(
-                    Text.H3("Create New Sprint"),
-                    newSprintName.ToTextInput().Placeholder("Sprint name (e.g., Sprint 1)"),
-                    newSprintGoal.ToTextInput().Placeholder("Sprint goal (optional)"),
-                    new Button("Create Sprint", createSprint).Primary()
-                )
-            ).Width(Size.Units(100)) :
+            SprintFormCard.Build(newSprintName, newSprintGoal, createSprint) :
             new Card(
                 Layout.Vertical(
                     // Sprint info (full width)
@@ -513,7 +504,7 @@ public class PlanningApp : ViewBase
                                                 Text.Strong(item.Title),
                                                 // Badges and buttons
                                                 Layout.Horizontal(
-                                                    GetIssueTypeBadge(item.Type),
+                                                    CardHelpers.GetIssueTypeBadge(item.Type),
                                                     new Badge(item.Status.ToString()).Secondary(),
                                                     new Badge($"{item.StoryPoints} pts").Primary(),
                                                     new Button("Remove from Sprint", () => removeItemFromSprint(item.Id)).Destructive().Small()
@@ -567,30 +558,14 @@ public class PlanningApp : ViewBase
                         .OrderBy(x => x.Id)
                         .Select(epic =>
                         {
-                            bool isInSprint = epic.SprintId != null;
                             var storiesCount = backlogItems.Value.Count(item => item.ParentId == epic.Id && item.Type == IssueType.Story);
-
-                            return new Card(
-                                Layout.Vertical(
-                                    // Title with badge
-                                    Layout.Horizontal(
-                                        GetIssueTypeBadge(epic.Type),
-                                        Text.Strong(epic.Title)
-                                    ),
-
-                                    // Badges and buttons
-                                    Layout.Horizontal(
-                                        // Story count indicator
-                                        new Badge($"{storiesCount} stories").Secondary(),
-
-                                        // Open Epic button
-                                        new Button("Open", () => openedEpic.Set(epic)).Primary().Small(),
-
-                                        // Delete button
-                                        new Button("Delete", () => DeleteItem(epic.Id)).Destructive().Small()
-                                    )
-                                ).Gap(4)
-                            ).Width(Size.MinContent());
+                            return EpicCard.Build(
+                                epic: epic,
+                                storiesCount: storiesCount,
+                                onOpen: () => openedEpic.Set(epic),
+                                onDelete: () => DeleteItem(epic.Id),
+                                showActions: true
+                            );
                         }).ToArray()
                 ).Gap(4)
         ).Gap(4);
@@ -746,67 +721,31 @@ public class PlanningApp : ViewBase
                             bool isInSprint = story.SprintId != null;
                             var tasks = backlogItems.Value.Where(item => item.ParentId == story.Id && (item.Type == IssueType.Task || item.Type == IssueType.Bug)).ToArray();
 
-                            return new Card(
+                            // Build nested tasks
+                            var nestedTasks = Layout.Vertical(
                                 Layout.Vertical(
-                                    // Title with badge
-                                    Layout.Horizontal(
-                                        GetIssueTypeBadge(story.Type),
-                                        Text.Strong(story.Title)
-                                    ).Gap(4).Width(Size.Auto()),
+                                    tasks.OrderBy(t => t.Id).Select(task =>
+                                        TaskCard.Build(
+                                            task: task,
+                                            onDelete: () => DeleteItem(task.Id),
+                                            showActions: true
+                                        )
+                                    ).ToArray()
+                                ).Gap(4)
+                            ).Gap(4);
 
-                                    // Badges and buttons
-                                    Layout.Horizontal(
-                                        new Badge($"{tasks.Length} tasks").Secondary(),
-                                        new Badge($"{story.StoryPoints} pts").Primary(),
-
-                                        isInSprint ?
-                                            new Badge("In Sprint").Secondary() :
-                                            new Badge("Backlog").Outline(),
-
-                                        new Button("+ Add Task/Bug", () => { addTaskToStory.Set(story); newIssueType.Set(IssueType.Task); }).Primary().Small(),
-
-                                        !isInSprint && currentSprint.Value != null ?
-                                            new Button("Add to Sprint", () => AddItemToSprint(story.Id)).Primary().Small() :
-                                        isInSprint ?
-                                            new Button("Remove from Sprint", () => RemoveItemFromSprint(story.Id)).Secondary().Small() :
-                                        null,
-
-                                        new Button("Delete", () => DeleteItem(story.Id)).Destructive().Small()
-                                    ),
-
-                                    // Story description
-
-                                    !string.IsNullOrEmpty(story.Description) ? Text.P(story.Description).Width(Size.Auto()) : null,
-                                    
-                                    // Nested Tasks/Bugs - Always show section
-                                    Layout.Vertical(
-                                        Layout.Vertical(
-                                            tasks.OrderBy(t => t.Id).Select(task =>
-                                            {
-                                                bool taskInSprint = task.SprintId != null;
-                                                return new Card(
-                                                    Layout.Vertical(
-                                                        // Title with badge
-                                                        Layout.Horizontal(
-                                                            GetIssueTypeBadge(task.Type),
-                                                            Text.P(task.Title)
-                                                        ).Gap(4),
-
-                                                        // Badges and buttons
-                                                        Layout.Horizontal(
-                                                            new Badge($"{task.StoryPoints} pts").Primary(),
-                                                            new Button("Delete", () => DeleteItem(task.Id)).Destructive().Small()
-                                                        ),
-
-                                                        // Task description
-                                                        !string.IsNullOrEmpty(task.Description) ? Text.P(task.Description) : null
-                                                    ).Gap(4)
-                                                );
-                                            }).ToArray()
-                                        ).Gap(4)
-                                    ).Gap(4)
-                                )
-                            ).Width(Size.MinContent());
+                            return StoryCard.Build(
+                                story: story,
+                                tasksCount: tasks.Length,
+                                isInSprint: isInSprint,
+                                currentSprintExists: currentSprint.Value != null,
+                                onAddTaskBug: () => { addTaskToStory.Set(story); newIssueType.Set(IssueType.Task); },
+                                onAddToSprint: () => AddItemToSprint(story.Id),
+                                onRemoveFromSprint: () => RemoveItemFromSprint(story.Id),
+                                onDelete: () => DeleteItem(story.Id),
+                                nestedTasks: nestedTasks,
+                                showActions: true
+                            );
                         }).ToArray()
                 )
             )
@@ -866,7 +805,7 @@ public class PlanningApp : ViewBase
                                 Layout.Vertical(
                                     // Title with badge
                                     Layout.Horizontal(
-                                        GetIssueTypeBadge(task.Type),
+                                        CardHelpers.GetIssueTypeBadge(task.Type),
                                         Text.Strong(task.Title)
                                     ).Gap(4),
 
