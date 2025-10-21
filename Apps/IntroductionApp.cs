@@ -21,6 +21,57 @@ public class IntroductionApp : ViewBase
         // Create signal to notify other apps to refresh
         var refreshSignal = Context.CreateSignal<RefreshDataSignal, bool, bool>();
 
+        // Listen for refresh signals from other apps (e.g., when PlanningApp cleans database)
+        var refreshReceiver = Context.UseSignal<RefreshDataSignal, bool, bool>();
+
+        // Helper to reload data from database (used by signal receiver)
+        void ReloadFromSignal()
+        {
+            try
+            {
+                // Load only tutorial items
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: true);
+                var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
+                backlogItems.Set(items);
+
+                // Load only tutorial sprint
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: true);
+                if (currentSprintModel != null)
+                {
+                    currentSprint.Set(currentSprintModel.ToSprint());
+                }
+                else
+                {
+                    currentSprint.Set((Sprint)null!);
+                }
+
+                // Load archived tutorial sprints
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: true);
+                var archived = allSprints
+                    .Where(s => s.IsArchived == 1)
+                    .Select(s => s.ToSprint())
+                    .ToImmutableArray();
+                archivedSprints.Set(archived);
+
+                // Only reset to step 1 if database was cleaned (no tutorial items AND introduction not completed)
+                var introCompleted = AppSettings.GetBoolSetting("introduction_completed", false);
+                if (!introCompleted && items.Length == 0 && currentSprintModel == null)
+                {
+                    currentStep.Set(1);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reloading data from signal: {ex.Message}");
+            }
+        }
+
+        UseEffect(() => refreshReceiver.Receive(value =>
+        {
+            ReloadFromSignal();
+            return true;
+        }));
+
         // Modal states
         var isAddEpicModalOpen = UseState(false);
         var isAddStoryModalOpen = UseState(false);
@@ -34,12 +85,12 @@ public class IntroductionApp : ViewBase
 
         var newStoryTitle = UseState("");
         var newStoryDescription = UseState("");
-        var newStoryPoints = UseState(3);
+        var newStoryPoints = UseState(1);
         var selectedEpic = UseState<BacklogItem?>(() => null);
 
         var newTaskTitle = UseState("");
         var newTaskDescription = UseState("");
-        var newTaskPoints = UseState(2);
+        var newTaskPoints = UseState(1);
         var newTaskType = UseState(IssueType.Task);
         var selectedStory = UseState<BacklogItem?>(() => null);
 
@@ -136,7 +187,7 @@ public class IntroductionApp : ViewBase
                     Title = newEpicTitle.Value,
                     Description = newEpicDescription.Value,
                     StoryPoints = 0,
-                    Priority = backlogItems.Value.Count(x => x.Type == IssueType.Epic) + 1,
+                    Priority = 1,
                     Status = ItemStatus.Backlog.ToString(),
                     Type = IssueType.Epic.ToString(),
                     ParentId = null,
@@ -164,7 +215,7 @@ public class IntroductionApp : ViewBase
                     Title = newStoryTitle.Value,
                     Description = newStoryDescription.Value,
                     StoryPoints = newStoryPoints.Value,
-                    Priority = backlogItems.Value.Count(x => x.Type == IssueType.Story && x.ParentId == selectedEpic.Value.Id) + 1,
+                    Priority = 1,
                     Status = ItemStatus.Backlog.ToString(),
                     Type = IssueType.Story.ToString(),
                     ParentId = selectedEpic.Value.Id,
@@ -203,7 +254,7 @@ public class IntroductionApp : ViewBase
                     Title = newTaskTitle.Value,
                     Description = newTaskDescription.Value,
                     StoryPoints = newTaskPoints.Value,
-                    Priority = backlogItems.Value.Count(x => (x.Type == IssueType.Task || x.Type == IssueType.Bug) && x.ParentId == selectedStory.Value.Id) + 1,
+                    Priority = 1,
                     Status = storyInSprint ? ItemStatus.Todo.ToString() : ItemStatus.Backlog.ToString(),
                     Type = newTaskType.Value.ToString(),
                     ParentId = selectedStory.Value.Id,

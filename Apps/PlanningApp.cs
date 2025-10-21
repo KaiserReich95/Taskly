@@ -28,12 +28,12 @@ public class PlanningApp : ViewBase
             try
             {
                 // Reload backlog items
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
                 // Reload current sprint
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -353,27 +353,15 @@ public class PlanningApp : ViewBase
             // STORY DETAIL VIEW: Show Tasks and Bugs within the Story
             Layout.Vertical(
                 isAddItemModalOpen.Value ?
-                    new FloatingPanel(
-                        new Card(
-                            Layout.Vertical(
-                                Text.H3("Add Task/Bug to Story"),
-                                newTitle.ToTextInput().Placeholder("Enter title..."),
-                                newDescription.ToTextInput().Placeholder("Enter description..."),
-                                newStoryPoints.ToNumberInput().Min(1).Max(21),
-                                new SelectInput<IssueType>(
-                                    value: newIssueType.Value,
-                                    onChange: e => { newIssueType.Set(e.Value); return ValueTask.CompletedTask; },
-                                    options: new[] {
-                                        new Option<IssueType>("Task", IssueType.Task),
-                                        new Option<IssueType>("Bug", IssueType.Bug)
-                                    }
-                                ),
-                                Layout.Horizontal(
-                                    new Button("Cancel", () => isAddItemModalOpen.Set(false)).Secondary(),
-                                    new Button("Add Item", AddItem).Primary()
-                                ).Gap(8)
-                            )
-                        )
+                    BacklogItemFormModal.Build(
+                        title: "Add Task/Bug to Story",
+                        itemTitle: newTitle,
+                        itemDescription: newDescription,
+                        itemType: "Task/Bug",
+                        onCancel: () => isAddItemModalOpen.Set(false),
+                        onSubmit: AddItem,
+                        storyPoints: newStoryPoints,
+                        issueTypeSelect: newIssueType
                     ) : null,
 
                 // Sprint management section
@@ -386,45 +374,27 @@ public class PlanningApp : ViewBase
             Layout.Vertical(
                 // Modal for adding Story to Epic
                 isAddItemModalOpen.Value ?
-                    new FloatingPanel(
-                        new Card(
-                            Layout.Vertical(
-                                Text.H3("Add Story to Epic"),
-                                newTitle.ToTextInput().Placeholder("Enter title..."),
-                                newDescription.ToTextInput().Placeholder("Enter description..."),
-                                newStoryPoints.ToNumberInput().Min(1).Max(21),
-                                Text.P($"Type: Story"),
-                                Layout.Horizontal(
-                                    new Button("Cancel", () => isAddItemModalOpen.Set(false)).Secondary(),
-                                    new Button("Add Item", AddItem).Primary()
-                                ).Gap(8)
-                            )
-                        )
+                    BacklogItemFormModal.Build(
+                        title: "Add Story to Epic",
+                        itemTitle: newTitle,
+                        itemDescription: newDescription,
+                        itemType: "Story",
+                        onCancel: () => isAddItemModalOpen.Set(false),
+                        onSubmit: AddItem,
+                        storyPoints: newStoryPoints
                     ) : null,
 
                 // Modal for adding Task/Bug to Story (within Epic view)
                 addTaskToStory.Value != null ?
-                    new FloatingPanel(
-                        new Card(
-                            Layout.Vertical(
-                                Text.H3($"Add Task/Bug to Story: {addTaskToStory.Value.Title}"),
-                                newTitle.ToTextInput().Placeholder("Enter title..."),
-                                newDescription.ToTextInput().Placeholder("Enter description..."),
-                                newStoryPoints.ToNumberInput().Min(1).Max(21),
-                                new SelectInput<IssueType>(
-                                    value: newIssueType.Value,
-                                    onChange: e => { newIssueType.Set(e.Value); return ValueTask.CompletedTask; },
-                                    options: new[] {
-                                        new Option<IssueType>("Task", IssueType.Task),
-                                        new Option<IssueType>("Bug", IssueType.Bug)
-                                    }
-                                ),
-                                Layout.Horizontal(
-                                    new Button("Cancel", () => addTaskToStory.Set((BacklogItem?)null)).Secondary(),
-                                    new Button("Add Item", AddItem).Primary()
-                                ).Gap(8)
-                            )
-                        )
+                    BacklogItemFormModal.Build(
+                        title: $"Add Task/Bug to Story: {addTaskToStory.Value.Title}",
+                        itemTitle: newTitle,
+                        itemDescription: newDescription,
+                        itemType: "Task/Bug",
+                        onCancel: () => addTaskToStory.Set((BacklogItem?)null),
+                        onSubmit: AddItem,
+                        storyPoints: newStoryPoints,
+                        issueTypeSelect: newIssueType
                     ) : null,
 
                 // Sprint management section
@@ -444,19 +414,13 @@ public class PlanningApp : ViewBase
                 ).Gap(8),
 
                 isAddItemModalOpen.Value ?
-                    new FloatingPanel(
-                        new Card(
-                            Layout.Vertical(
-                                Text.H3("Add Epic"),
-                                newTitle.ToTextInput().Placeholder("Enter title..."),
-                                newDescription.ToTextInput().Placeholder("Enter description..."),
-                                Text.P($"Type: Epic"),
-                                Layout.Horizontal(
-                                    new Button("Cancel", () => isAddItemModalOpen.Set(false)).Secondary(),
-                                    new Button("Add Item", AddItem).Primary()
-                                ).Gap(8)
-                            )
-                        )
+                    BacklogItemFormModal.Build(
+                        title: "Add Epic",
+                        itemTitle: newTitle,
+                        itemDescription: newDescription,
+                        itemType: "Epic",
+                        onCancel: () => isAddItemModalOpen.Set(false),
+                        onSubmit: AddItem
                     ) : null,
 
                     // Sprint management section
@@ -543,7 +507,7 @@ public class PlanningApp : ViewBase
             InitDatabase.DeleteBacklogItem(id);
 
             // Reload data
-            var itemModels = InitDatabase.GetAllBacklogItems();
+            var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
             var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
             backlogItems.Set(items);
         }
@@ -582,11 +546,11 @@ public class PlanningApp : ViewBase
         {
             try
             {
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -763,7 +727,7 @@ public class PlanningApp : ViewBase
             InitDatabase.DeleteBacklogItem(id);
 
             // Reload data
-            var itemModels = InitDatabase.GetAllBacklogItems();
+            var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
             var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
             backlogItems.Set(items);
         }

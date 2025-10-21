@@ -66,6 +66,10 @@ public class CleanDatabase
             connection.Execute("DELETE FROM developers");
             Console.WriteLine($"✓ Deleted {developerCount} developers");
 
+            // Reset introduction completion flag so user can go through tutorial again
+            AppSettings.SetBoolSetting("introduction_completed", false);
+            Console.WriteLine("✓ Introduction completion flag reset");
+
             Console.WriteLine("✓ All data cleaned successfully!");
 
             await Task.CompletedTask; // Keep async signature for compatibility

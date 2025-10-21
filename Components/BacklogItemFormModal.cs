@@ -40,8 +40,7 @@ public static class BacklogItemFormModal
                                 new Option<Models.IssueType>("Task", Models.IssueType.Task),
                                 new Option<Models.IssueType>("Bug", Models.IssueType.Bug)
                             }
-                        ) :
-                        Text.P($"Type: {itemType}"),
+                        ) : null,
 
                     Layout.Horizontal(
                         new Button("Cancel", onCancel).Secondary(),
