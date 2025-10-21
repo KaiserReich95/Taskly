@@ -1,5 +1,6 @@
 namespace Taskly.Apps;
 using Taskly.Models;
+using Taskly.Components;
 using Taskly.Database;
 using Taskly.Connections;
 
@@ -32,20 +33,20 @@ public class SprintBoardApp : ViewBase
         {
             try
             {
-                // Load backlog items
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                // Load backlog items (exclude tutorial items)
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                // Load current sprint
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                // Load current sprint (exclude tutorial sprints)
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
                 }
 
-                // Load archived sprints
-                var allSprints = InitDatabase.GetAllSprints();
+                // Load archived sprints (exclude tutorial sprints)
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: false);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -66,11 +67,11 @@ public class SprintBoardApp : ViewBase
         {
             try
             {
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -80,7 +81,7 @@ public class SprintBoardApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                var allSprints = InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: false);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -275,26 +276,18 @@ public class SprintBoardApp : ViewBase
             Text.H2("Sprint Board"),
 
             // Show current sprint info or message if no sprint
-            currentSprint.Value == null ?
+            currentSprint.Value != null ?
+                SprintSummaryCard.Build(
+                    sprint: currentSprint.Value,
+                    allTasksCount: allTasks.Length,
+                    todoTasksCount: todoTasks.Length,
+                    inProgressTasksCount: inProgressTasks.Length,
+                    doneTasksCount: doneTasks.Length,
+                    archiveButton: ArchiveSprint  // Active archive button
+                ) :
                 new Card(
                     Text.P("No active sprint. Create a sprint in the Planning app to get started.")
-                ).Width(Size.Fit()) :
-                new Card(
-                    Layout.Vertical(
-                        Layout.Horizontal(
-                            Layout.Vertical(
-                                Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
-                                !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                    Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                                Text.Small($"Tasks/Bugs: {allTasks.Length} | " +
-                                          $"To Do: {todoTasks.Length} | " +
-                                          $"In Progress: {inProgressTasks.Length} | " +
-                                          $"Done: {doneTasks.Length}")
-                            ),
-                            new Button("Archive Sprint", ArchiveSprint).Secondary()
-                        )
-                    )
-                ).Width(Size.Units(200)),
+                ).Width(Size.Fit()),
 
             // Hierarchical Kanban board with columns inside each story
             currentSprint.Value != null && sprintStories.Length > 0 ?

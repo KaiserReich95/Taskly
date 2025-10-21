@@ -58,18 +58,20 @@ public class IntroductionApp : ViewBase
                     currentStep.Set(8);
                 }
 
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                // Load only tutorial items
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: true);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                // Load only tutorial sprint
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: true);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
                 }
 
-                // Load archived sprints
-                var allSprints = InitDatabase.GetAllSprints();
+                // Load archived tutorial sprints
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: true);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -91,11 +93,13 @@ public class IntroductionApp : ViewBase
         {
             try
             {
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                // Load only tutorial items
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: true);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                // Load only tutorial sprint
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: true);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -105,8 +109,8 @@ public class IntroductionApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                // Load archived sprints
-                var allSprints = InitDatabase.GetAllSprints();
+                // Load archived tutorial sprints
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: true);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -135,7 +139,8 @@ public class IntroductionApp : ViewBase
                     Priority = backlogItems.Value.Count(x => x.Type == IssueType.Epic) + 1,
                     Status = ItemStatus.Backlog.ToString(),
                     Type = IssueType.Epic.ToString(),
-                    ParentId = null
+                    ParentId = null,
+                    IsTutorial = 1  // Tutorial data
                 };
 
                 var created = InitDatabase.CreateBacklogItem(epicModel);
@@ -162,7 +167,8 @@ public class IntroductionApp : ViewBase
                     Priority = backlogItems.Value.Count(x => x.Type == IssueType.Story && x.ParentId == selectedEpic.Value.Id) + 1,
                     Status = ItemStatus.Backlog.ToString(),
                     Type = IssueType.Story.ToString(),
-                    ParentId = selectedEpic.Value.Id
+                    ParentId = selectedEpic.Value.Id,
+                    IsTutorial = 1  // Tutorial data
                 };
 
                 var created = InitDatabase.CreateBacklogItem(storyModel);
@@ -201,7 +207,8 @@ public class IntroductionApp : ViewBase
                     Status = storyInSprint ? ItemStatus.Todo.ToString() : ItemStatus.Backlog.ToString(),
                     Type = newTaskType.Value.ToString(),
                     ParentId = selectedStory.Value.Id,
-                    SprintId = parentStory.SprintId
+                    SprintId = parentStory.SprintId,
+                    IsTutorial = 1  // Tutorial data
                 };
 
                 var created = InitDatabase.CreateBacklogItem(taskModel);
@@ -233,7 +240,8 @@ public class IntroductionApp : ViewBase
                     EndDate = DateTime.Now.AddDays(14),
                     Goal = newSprintGoal.Value,
                     ItemIds = new List<int>(),
-                    IsArchived = 0
+                    IsArchived = 0,
+                    IsTutorial = 1  // Tutorial data
                 };
 
                 var created = InitDatabase.CreateSprint(sprintModel);
@@ -365,24 +373,11 @@ public class IntroductionApp : ViewBase
                 3 => BuildStep3_CreateStories(epics, selectedEpic, backlogItems, newStoryTitle, newStoryDescription, newStoryPoints, CreateStory, DeleteItem, isAddStoryModalOpen, selectedStory, currentStep),
                 4 => BuildStep4_CreateTasks(epics, selectedEpic, selectedStory, backlogItems, newTaskTitle, newTaskDescription, newTaskPoints, newTaskType, CreateTask, DeleteItem, isAddTaskModalOpen, currentStep),
                 5 => BuildStep5_AddToSprint(epics, backlogItems, currentSprint, AddStoryToSprint, showStoryAddedPopup, currentStep),
-                6 => BuildStep6_SprintBoard(backlogItems, currentSprint),
+                6 => BuildStep6_SprintBoard(backlogItems, currentSprint, currentStep, CanProceedToNextStep, NextStep),
                 7 => BuildStep7_Archive(backlogItems, archivedSprints, currentSprint, ArchiveSprint, showSprintArchivedPopup, currentStep),
                 8 => BuildStep8_Congratulations(currentStep),
                 _ => Text.P("Invalid step")
-            },
-
-            // Navigation - only show on Step 6
-            currentStep.Value == 6 ?
-                new Card(
-                    Layout.Horizontal(
-                        new Spacer().Width(Size.Grow()),
-                        currentStep.Value < totalSteps ?
-                            (CanProceedToNextStep() ?
-                                new Button("Next →", NextStep).Primary() :
-                                new Button("Next →", NextStep).Primary().Disabled()) :
-                            Text.P("You're all set! Continue using the Planning, Sprint Board, and Archive apps.")
-                    ).Gap(8)
-                ) : null
+            }
         ).Gap(8);
     }
 
@@ -398,16 +393,7 @@ public class IntroductionApp : ViewBase
                 Text.P("A Sprint is a time-boxed iteration where you'll work on selected Stories. Create your sprint first, then we'll add work items to it. Input a name and goal for the sprint then press the 'Create Sprint' button to progress to next step."),
 
                 currentSprint.Value == null ?
-                    SprintFormCard.Build(newSprintName, newSprintGoal, createSprint) :
-                    new Card(
-                        Layout.Vertical(
-                            Text.H4("✅ Sprint Created!"),
-                            Text.Strong($"Sprint: {currentSprint.Value.Name}"),
-                            !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                            new Badge("Ready to add work").Primary()
-                        ).Gap(4)
-                    ).Width(Size.MinContent()),
+                    SprintFormCard.Build(newSprintName, newSprintGoal, createSprint) : null,
 
                 new Card(
                     Layout.Vertical(
@@ -436,19 +422,13 @@ public class IntroductionApp : ViewBase
         return Layout.Vertical(
             // Modal for adding Epic
             isAddEpicModalOpen.Value ?
-                new FloatingPanel(
-                    new Card(
-                        Layout.Vertical(
-                            Text.H3("Add Epic"),
-                            newEpicTitle.ToTextInput().Placeholder("Enter title..."),
-                            newEpicDescription.ToTextInput().Placeholder("Enter description..."),
-                            Text.P($"Type: Epic"),
-                            Layout.Horizontal(
-                                new Button("Cancel", () => isAddEpicModalOpen.Set(false)).Secondary(),
-                                new Button("Add Item", createEpic).Primary()
-                            ).Gap(8)
-                        )
-                    )
+                BacklogItemFormModal.Build(
+                    title: "Add Epic",
+                    itemTitle: newEpicTitle,
+                    itemDescription: newEpicDescription,
+                    itemType: "Epic",
+                    onCancel: () => isAddEpicModalOpen.Set(false),
+                    onSubmit: createEpic
                 ) : null,
 
             new Card(
@@ -505,37 +485,20 @@ public class IntroductionApp : ViewBase
         IState<BacklogItem?> selectedStory,
         IState<int> currentStep)
     {
-        if (epics.Length == 0 || selectedEpic.Value == null)
-        {
-            return new Card(
-                Layout.Vertical(
-                    Text.H3("Step 3: Add Stories to Epic"),
-                    Text.P("⚠️ You need to create at least one Epic and open it in Step 2 before you can add Stories."),
-                    new Button("← Go Back to Step 2", () => currentStep.Set(2)).Secondary()
-                ).Gap(4)
-            ).Width(Size.Full());
-        }
-
-        var epic = selectedEpic.Value;
+        var epic = selectedEpic.Value!;
         var stories = backlogItems.Value.Where(x => x.Type == IssueType.Story && x.ParentId == epic.Id).ToArray();
 
         return Layout.Vertical(
             // Modal for adding Story
             isAddStoryModalOpen.Value ?
-                new FloatingPanel(
-                    new Card(
-                        Layout.Vertical(
-                            Text.H3("Add Story"),
-                            newStoryTitle.ToTextInput().Placeholder("Enter title..."),
-                            newStoryDescription.ToTextInput().Placeholder("Enter description..."),
-                            newStoryPoints.ToNumberInput().Min(1).Max(21),
-                            Text.P($"Type: Story"),
-                            Layout.Horizontal(
-                                new Button("Cancel", () => isAddStoryModalOpen.Set(false)).Secondary(),
-                                new Button("Add Item", createStory).Primary()
-                            ).Gap(8)
-                        )
-                    )
+                BacklogItemFormModal.Build(
+                    title: "Add Story",
+                    itemTitle: newStoryTitle,
+                    itemDescription: newStoryDescription,
+                    itemType: "Story",
+                    onCancel: () => isAddStoryModalOpen.Set(false),
+                    onSubmit: createStory,
+                    storyPoints: newStoryPoints
                 ) : null,
 
             Layout.Vertical(
@@ -617,46 +580,22 @@ public class IntroductionApp : ViewBase
         IState<bool> isAddTaskModalOpen,
         IState<int> currentStep)
     {
-        if (selectedEpic.Value == null || selectedStory.Value == null)
-        {
-            return new Card(
-                Layout.Vertical(
-                    Text.H3("Step 4: Break Down Stories into Tasks"),
-                    Text.P("⚠️ You need to select a Story in Step 3 before you can add Tasks."),
-                    new Button("← Go Back to Epic", () => currentStep.Set(3)).Secondary()
-                ).Gap(4)
-            ).Width(Size.Full());
-        }
-
-        var epic = selectedEpic.Value;
-        var story = selectedStory.Value;
+        var epic = selectedEpic.Value!;
+        var story = selectedStory.Value!;
         var allStoriesInEpic = backlogItems.Value.Where(x => x.Type == IssueType.Story && x.ParentId == epic.Id).ToArray();
 
         return Layout.Vertical(
             // Modal for adding Task/Bug
             isAddTaskModalOpen.Value ?
-                new FloatingPanel(
-                    new Card(
-                        Layout.Vertical(
-                            Text.H3("Add Task/Bug"),
-                            newTaskTitle.ToTextInput().Placeholder("Enter title..."),
-                            newTaskDescription.ToTextInput().Placeholder("Enter description..."),
-                            newTaskPoints.ToNumberInput().Min(1).Max(21),
-                            new SelectInput<IssueType>(
-                                value: newTaskType.Value,
-                                onChange: e => { newTaskType.Set(e.Value); return ValueTask.CompletedTask; },
-                                options: new[]
-                                {
-                                    new Option<IssueType>("Task", IssueType.Task),
-                                    new Option<IssueType>("Bug", IssueType.Bug)
-                                }
-                            ),
-                            Layout.Horizontal(
-                                new Button("Cancel", () => isAddTaskModalOpen.Set(false)).Secondary(),
-                                new Button("Add Item", createTask).Primary()
-                            ).Gap(8)
-                        )
-                    )
+                BacklogItemFormModal.Build(
+                    title: "Add Task/Bug",
+                    itemTitle: newTaskTitle,
+                    itemDescription: newTaskDescription,
+                    itemType: "Task/Bug",
+                    onCancel: () => isAddTaskModalOpen.Set(false),
+                    onSubmit: createTask,
+                    storyPoints: newTaskPoints,
+                    issueTypeSelect: newTaskType
                 ) : null,
 
             Layout.Vertical(
@@ -886,7 +825,10 @@ public class IntroductionApp : ViewBase
 
     private object BuildStep6_SprintBoard(
         IState<ImmutableArray<BacklogItem>> backlogItems,
-        IState<Sprint> currentSprint)
+        IState<Sprint> currentSprint,
+        IState<int> currentStep,
+        Func<bool> canProceedToNextStep,
+        Action nextStep)
     {
         var spaceingBoardColumns = 120;
 
@@ -1046,27 +988,16 @@ public class IntroductionApp : ViewBase
             Text.P("Manage and track your work during the sprint using this Sprint Board. Move tasks through the workflow from To Do → In Progress → Done using the action buttons on each task card. When you feel ready press the next button in the bottom of the page to move to the next step."),
 
             // Show current sprint info or message if no sprint
-            currentSprint.Value == null ?
-                new Card(
-                    Text.P("No active sprint. You need to complete the previous steps.")
-                ).Width(Size.Fit()) :
-                new Card(
-                    Layout.Vertical(
-                        Layout.Horizontal(
-                            Layout.Vertical(
-                                Text.H3($"Active Sprint: {currentSprint.Value.Name}"),
-                                !string.IsNullOrEmpty(currentSprint.Value.Goal) ?
-                                    Text.P($"Goal: {currentSprint.Value.Goal}") : null,
-                                Text.Small($"Tasks/Bugs: {allTasks.Length} | " +
-                                          $"To Do: {todoTasks.Length} | " +
-                                          $"In Progress: {inProgressTasks.Length} | " +
-                                          $"Done: {doneTasks.Length}")
-                            ),
-                            new Button("Archive Sprint", () => { }).Secondary()
-                        )
-                    )
-                ).Width(Size.Units(200)),
-
+            currentSprint.Value != null ?
+                SprintSummaryCard.Build(
+                    sprint: currentSprint.Value,
+                    allTasksCount: allTasks.Length,
+                    todoTasksCount: todoTasks.Length,
+                    inProgressTasksCount: inProgressTasks.Length,
+                    doneTasksCount: doneTasks.Length,
+                    archiveButton: null  // Disabled in tutorial step 6
+                ) : null,
+                
             // Hierarchical Kanban board with columns inside each story
             currentSprint.Value != null && sprintStories.Length > 0 ?
                 BuildHierarchyPanel() :
@@ -1092,7 +1023,17 @@ public class IntroductionApp : ViewBase
                     Text.Strong("Ready for the next step?"),
                     Text.P("Click 'Next' to archive your sprint and see the Sprint Archive view!")
                 ).Gap(2)
-            ).Width(Size.Full())
+            ).Width(Size.Full()),
+
+            // Navigation button
+            new Card(
+                Layout.Horizontal(
+                    new Spacer().Width(Size.Grow()),
+                    canProceedToNextStep() ?
+                        new Button("Next →", nextStep).Primary() :
+                        new Button("Next →", nextStep).Primary().Disabled()
+                ).Gap(8)
+            )
         ).Gap(16);
     }
 
@@ -1172,56 +1113,12 @@ public class IntroductionApp : ViewBase
                                     .Where(item => sprint.ItemIds.Contains(item.Id))
                                     .ToArray();
 
-                                var completedItems = sprintItems.Where(item => item.Status == ItemStatus.Done).Count();
-                                var totalPoints = sprintItems.Sum(item => item.StoryPoints);
-                                var completedPoints = sprintItems.Where(item => item.Status == ItemStatus.Done).Sum(item => item.StoryPoints);
-
-                                return new Card(
-                                    Layout.Vertical(
-                                        // Buttons at top-right
-                                        Layout.Horizontal(
-                                            new Spacer().Width(Size.Grow()), // Spacer to push buttons right
-                                            new Button("Make Current Sprint", () => { }).Primary(),
-                                            new Button("Delete Sprint", () => { }).Destructive()
-                                        ).Gap(2),
-
-                                        // Sprint info (full width)
-                                        Layout.Vertical(
-                                            Text.H3($"{sprint.Name}"),
-                                            !string.IsNullOrEmpty(sprint.Goal) ?
-                                                Text.P($"Goal: {sprint.Goal}") : null,
-                                            Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}"),
-                                            Layout.Horizontal(
-                                                new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
-                                                new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
-                                            ).Gap(4),
-                                            sprintItems.Length > 0 ?
-                                            Layout.Vertical(
-                                                Text.H4("Sprint Items:"),
-                                                Layout.Vertical(
-                                                    sprintItems
-                                                        .OrderBy(item => item.Id)
-                                                        .Select(item => new Card(
-                                                            Layout.Vertical(
-                                                                // Title with badge
-                                                                Layout.Horizontal(
-                                                                    GetIssueTypeBadge(item.Type),
-                                                                    Text.Strong(item.Title)
-                                                                ).Gap(4),
-
-                                                                // Badges
-                                                                Layout.Horizontal(
-                                                                    new Badge(item.Status.ToString()).Secondary(),
-                                                                    new Badge($"{item.StoryPoints} pts").Primary()
-                                                                )
-                                                            ).Gap(4)
-                                                        ))
-                                                        .ToArray()
-                                                ).Gap(2)
-                                            ).Gap(4) :
-                                            Text.P("No items in this sprint.")
-                                        )
-                                    ).Gap(0)
+                                return ArchivedSprintCard.Build(
+                                    sprint: sprint,
+                                    sprintItems: sprintItems,
+                                    makeCurrentAction: null,  // Disabled in tutorial
+                                    deleteAction: null,        // Disabled in tutorial
+                                    getIssueTypeBadge: GetIssueTypeBadge
                                 );
                             })
                             .ToArray()
@@ -1245,20 +1142,14 @@ public class IntroductionApp : ViewBase
     {
         async ValueTask RestartTutorial(Event<Button> _)
         {
-            // Clean the database
-            await CleanDatabase.ResetDatabase();
+            // Clean only tutorial data
+            await CleanDatabase.CleanTutorialData();
 
             // Reset introduction completion flag
             AppSettings.SetBoolSetting("introduction_completed", false);
 
             // Go back to step 1
             currentStep.Set(1);
-        }
-
-        async ValueTask CleanDatabaseOnly(Event<Button> _)
-        {
-            // Clean the database but don't restart tutorial
-            await CleanDatabase.ResetDatabase();
         }
 
         return new Card(
@@ -1294,16 +1185,12 @@ public class IntroductionApp : ViewBase
                         Text.Strong("🚀 You're Ready!"),
                         Text.P("All the Epics, Stories, and Tasks you created are in your backlog."),
                         Text.P("Switch to the other tabs to continue using Taskly for your projects."),
-                        Text.P("The projects you have created is now in the other apps, press clean database if you want to start from a clean state."),
                         Text.P("Happy project planning! 🎯")
                     ).Gap(2)
                 ).Width(Size.Full()),
 
-                // Action buttons
-                Layout.Horizontal(
-                    new Button("🔄 Restart Tutorial", RestartTutorial).Secondary(),
-                    new Button("🗑️ Clean Database", CleanDatabaseOnly).Destructive()
-                ).Gap(4)
+                // Action button
+                new Button("🔄 Restart Tutorial", RestartTutorial).Secondary()
             ).Gap(8)
         ).Width(Size.Fit());
     }

@@ -68,20 +68,20 @@ public class PlanningApp : ViewBase
         {
             try
             {
-                // Load backlog items
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                // Load backlog items (exclude tutorial items)
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                // Load current sprint
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                // Load current sprint (exclude tutorial sprints)
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
                 }
 
-                // Load archived sprints
-                var allSprints = InitDatabase.GetAllSprints();
+                // Load archived sprints (exclude tutorial sprints)
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: false);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -131,8 +131,8 @@ public class PlanningApp : ViewBase
         {
             try
             {
-                // Reload backlog items
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                // Reload backlog items (exclude tutorial items)
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
@@ -155,8 +155,8 @@ public class PlanningApp : ViewBase
                     }
                 }
 
-                // Reload current sprint
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                // Reload current sprint (exclude tutorial sprints)
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -166,8 +166,8 @@ public class PlanningApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                // Reload archived sprints
-                var allSprints = InitDatabase.GetAllSprints();
+                // Reload archived sprints (exclude tutorial sprints)
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: false);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())

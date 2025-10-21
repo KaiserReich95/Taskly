@@ -1,5 +1,6 @@
 namespace Taskly.Apps;
 using Taskly.Models;
+using Taskly.Components;
 using Taskly.Database;
 using Taskly.Connections;
 
@@ -31,20 +32,20 @@ public class SprintArchiveApp : ViewBase
         {
             try
             {
-                // Load backlog items
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                // Load backlog items (exclude tutorial items)
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                // Load current sprint
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                // Load current sprint (exclude tutorial sprints)
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
                 }
 
-                // Load archived sprints
-                var allSprints = InitDatabase.GetAllSprints();
+                // Load archived sprints (exclude tutorial sprints)
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: false);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -65,11 +66,11 @@ public class SprintArchiveApp : ViewBase
         {
             try
             {
-                var itemModels = InitDatabase.GetAllBacklogItems();
+                var itemModels = InitDatabase.GetAllBacklogItems(isTutorial: false);
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
 
-                var currentSprintModel = InitDatabase.GetCurrentSprint();
+                var currentSprintModel = InitDatabase.GetCurrentSprint(isTutorial: false);
                 if (currentSprintModel != null)
                 {
                     currentSprint.Set(currentSprintModel.ToSprint());
@@ -79,7 +80,7 @@ public class SprintArchiveApp : ViewBase
                     currentSprint.Set((Sprint)null!);
                 }
 
-                var allSprints = InitDatabase.GetAllSprints();
+                var allSprints = InitDatabase.GetAllSprints(isTutorial: false);
                 var archived = allSprints
                     .Where(s => s.IsArchived == 1)
                     .Select(s => s.ToSprint())
@@ -165,56 +166,12 @@ public class SprintArchiveApp : ViewBase
                                 .Where(item => sprint.ItemIds.Contains(item.Id))
                                 .ToArray();
 
-                            var completedItems = sprintItems.Where(item => item.Status == ItemStatus.Done).Count();
-                            var totalPoints = sprintItems.Sum(item => item.StoryPoints);
-                            var completedPoints = sprintItems.Where(item => item.Status == ItemStatus.Done).Sum(item => item.StoryPoints);
-
-                            return new Card(
-                                Layout.Vertical(
-                                    // Buttons at top-right
-                                    Layout.Horizontal(
-                                        new Spacer().Width(Size.Grow()), // Spacer to push buttons right
-                                        new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary(),
-                                        new Button("Delete Sprint", () => DeleteSprint(sprint)).Destructive()
-                                    ).Gap(2),
-
-                                    // Sprint info (full width)
-                                    Layout.Vertical(
-                                        Text.H3($"{sprint.Name}"),
-                                        !string.IsNullOrEmpty(sprint.Goal) ?
-                                            Text.P($"Goal: {sprint.Goal}") : null,
-                                        Text.Small($"Duration: {sprint.StartDate:MMM dd, yyyy} - {sprint.EndDate:MMM dd, yyyy}"),
-                                        Layout.Horizontal(
-                                            new Badge($"{completedItems}/{sprintItems.Length} items completed").Primary(),
-                                            new Badge($"{completedPoints}/{totalPoints} points completed").Secondary()
-                                        ).Gap(4),
-                                        sprintItems.Length > 0 ?
-                                        Layout.Vertical(
-                                            Text.H4("Sprint Items:"),
-                                            Layout.Vertical(
-                                                sprintItems
-                                                    .OrderBy(item => item.Id)
-                                                    .Select(item => new Card(
-                                                        Layout.Vertical(
-                                                            // Title with badge
-                                                            Layout.Horizontal(
-                                                                GetIssueTypeBadge(item.Type),
-                                                                Text.Strong(item.Title)
-                                                            ).Gap(4),
-
-                                                            // Badges
-                                                            Layout.Horizontal(
-                                                                new Badge(item.Status.ToString()).Secondary(),
-                                                                new Badge($"{item.StoryPoints} pts").Primary()
-                                                            )
-                                                        ).Gap(4)
-                                                    ))
-                                                    .ToArray()
-                                            ).Gap(2)
-                                        ).Gap(4) :
-                                        Text.P("No items in this sprint.")
-                                    )
-                                ).Gap(0)
+                            return ArchivedSprintCard.Build(
+                                sprint: sprint,
+                                sprintItems: sprintItems,
+                                makeCurrentAction: () => RestoreSprint(sprint),  // Active
+                                deleteAction: () => DeleteSprint(sprint),        // Active
+                                getIssueTypeBadge: GetIssueTypeBadge
                             );
                         })
                         .ToArray()
