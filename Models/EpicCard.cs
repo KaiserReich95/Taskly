@@ -1,5 +1,4 @@
-namespace Taskly.Components;
-using Taskly.Models;
+namespace Taskly.Models;
 
 public class EpicCard
 {

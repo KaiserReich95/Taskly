@@ -1,6 +1,4 @@
-namespace Taskly.Components;
-
-using Taskly.Models;
+namespace Taskly.Models;
 
 /// <summary>
 /// Reusable component for displaying sprint summary information

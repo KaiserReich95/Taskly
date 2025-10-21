@@ -1,6 +1,5 @@
 namespace Taskly.Apps;
 using Taskly.Models;
-using Taskly.Components;
 using Taskly.Database;
 using Taskly.Connections;
 

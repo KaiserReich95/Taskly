@@ -2,7 +2,6 @@ namespace Taskly.Apps;
 using Taskly.Models;
 using Taskly.Database;
 using Taskly.Connections;
-using Taskly.Components;
 
 [App(icon: Icons.Calendar)]
 public class PlanningApp : ViewBase

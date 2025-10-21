@@ -1,6 +1,4 @@
-namespace Taskly.Components;
-
-using Taskly.Models;
+namespace Taskly.Models;
 
 /// <summary>
 /// Reusable modal component for adding backlog items (Epic, Story, Task, Bug)
