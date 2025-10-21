@@ -359,3 +359,45 @@ public class SprintModel
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
+
+// App Settings helpers
+public static class AppSettings
+{
+    public static string? GetSetting(string key)
+    {
+        using var connection = InitDatabase.GetConnection();
+        var sql = "SELECT value FROM app_settings WHERE key = @Key";
+        return connection.QueryFirstOrDefault<string>(sql, new { Key = key });
+    }
+
+    public static void SetSetting(string key, string value)
+    {
+        using var connection = InitDatabase.GetConnection();
+        var sql = @"INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (@Key, @Value, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET value = @Value, updated_at = CURRENT_TIMESTAMP";
+        connection.Execute(sql, new { Key = key, Value = value });
+    }
+
+    public static bool GetBoolSetting(string key, bool defaultValue = false)
+    {
+        var value = GetSetting(key);
+        return value != null && bool.TryParse(value, out var result) ? result : defaultValue;
+    }
+
+    public static void SetBoolSetting(string key, bool value)
+    {
+        SetSetting(key, value.ToString());
+    }
+
+    public static int GetIntSetting(string key, int defaultValue = 0)
+    {
+        var value = GetSetting(key);
+        return value != null && int.TryParse(value, out var result) ? result : defaultValue;
+    }
+
+    public static void SetIntSetting(string key, int value)
+    {
+        SetSetting(key, value.ToString());
+    }
+}

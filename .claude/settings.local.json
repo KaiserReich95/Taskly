@@ -15,7 +15,9 @@
       "Bash(sqlite3 taskly_database.db \"SELECT id, name, goal, is_archived FROM sprints ORDER BY id DESC LIMIT 5;\")",
       "Bash(sqlite3 taskly_database.db \"SELECT id, name, goal, is_archived, item_ids FROM sprints WHERE is_archived = 0;\")",
       "Bash(sqlite3 taskly_database.db \"INSERT INTO sprints (name, start_date, end_date, goal, item_ids, is_archived) VALUES (''Test Sprint from DB'', ''2025-10-20'', ''2025-11-03'', ''Test goal'', ''[]'', 0); SELECT id, name, is_archived FROM sprints WHERE is_archived = 0;\")",
-      "Bash(sqlite3 taskly_database.db \"SELECT COUNT(*) as total_items FROM backlog_items;\")"
+      "Bash(sqlite3 taskly_database.db \"SELECT COUNT(*) as total_items FROM backlog_items;\")",
+      "Bash(dotnet watch)",
+      "Bash(sqlite3 taskly_database.db \"DELETE FROM sprints WHERE id >= 27; INSERT INTO sprints (name, start_date, end_date, goal, item_ids, is_archived) VALUES (''Test from CLI'', ''2025-10-20'', ''2025-11-03'', ''CLI Test'', ''[]'', 0); SELECT * FROM sprints WHERE is_archived = 0;\")"
     ],
     "deny": [],
     "ask": []

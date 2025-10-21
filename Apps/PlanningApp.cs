@@ -524,7 +524,7 @@ public class PlanningApp : ViewBase
 
                     // Buttons at bottom-right
                     Layout.Horizontal(
-                        Text.P("").Width(Size.Grow()), // Spacer to push buttons right
+                        new Spacer().Width(Size.Grow()), // Spacer to push buttons right
                         new Button("Archive Sprint", archiveSprint).Secondary(),
                         new Button("Delete Sprint", () => deleteSprint(currentSprint)).Destructive()
                     ).Gap(2)

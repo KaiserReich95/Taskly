@@ -26,6 +26,7 @@ public class IntroductionApp : ViewBase
         var isAddStoryModalOpen = UseState(false);
         var isAddTaskModalOpen = UseState(false);
         var showStoryAddedPopup = UseState(false);
+        var showSprintArchivedPopup = UseState(false);
 
         // Form states for creating items
         var newEpicTitle = UseState("");
@@ -50,6 +51,13 @@ public class IntroductionApp : ViewBase
         {
             try
             {
+                // Check if introduction is already completed
+                var introCompleted = AppSettings.GetBoolSetting("introduction_completed", false);
+                if (introCompleted)
+                {
+                    currentStep.Set(8);
+                }
+
                 var itemModels = InitDatabase.GetAllBacklogItems();
                 var items = itemModels.Select(m => m.ToBacklogItem()).ToImmutableArray();
                 backlogItems.Set(items);
@@ -76,6 +84,7 @@ public class IntroductionApp : ViewBase
                 isLoading.Set(false);
             }
         });
+
 
         // Helper to reload data from database and notify other apps
         async Task ReloadData()
@@ -285,13 +294,30 @@ public class IntroductionApp : ViewBase
 
                 await ReloadData();
 
-                // Move to Step 7 (Archive view)
-                currentStep.Set(7);
+                // If we're in Step 7, show the success popup
+                if (currentStep.Value == 7)
+                {
+                    showSprintArchivedPopup.Set(true);
+                }
+                else
+                {
+                    // Move to Step 7 (Archive view) from other steps
+                    currentStep.Set(7);
+                }
             }
         }
 
-        void NextStep() => currentStep.Set(Math.Min(currentStep.Value + 1, totalSteps));
-        void PreviousStep() => currentStep.Set(Math.Max(currentStep.Value - 1, 1));
+        void NextStep()
+        {
+            var nextStepValue = Math.Min(currentStep.Value + 1, totalSteps);
+            currentStep.Set(nextStepValue);
+
+            // Mark introduction as completed when reaching step 8
+            if (nextStepValue == 8)
+            {
+                AppSettings.SetBoolSetting("introduction_completed", true);
+            }
+        }
 
         if (isLoading.Value)
         {
@@ -322,7 +348,7 @@ public class IntroductionApp : ViewBase
             new Card(
                 Layout.Vertical(
                     Text.H2("Getting Started with Taskly"),
-                    Text.P("Follow these steps to create your first project structure. All items you create here will be saved to the database and visible in all other apps."),
+                    Text.P("Follow these steps to create your first project structure."),
                     Layout.Vertical(
                         new Badge($"Step {currentStep.Value} of {totalSteps}").Primary(),
                         new Progress(currentStep.Value * 100 / totalSteps),
@@ -339,25 +365,24 @@ public class IntroductionApp : ViewBase
                 3 => BuildStep3_CreateStories(epics, selectedEpic, backlogItems, newStoryTitle, newStoryDescription, newStoryPoints, CreateStory, DeleteItem, isAddStoryModalOpen, selectedStory, currentStep),
                 4 => BuildStep4_CreateTasks(epics, selectedEpic, selectedStory, backlogItems, newTaskTitle, newTaskDescription, newTaskPoints, newTaskType, CreateTask, DeleteItem, isAddTaskModalOpen, currentStep),
                 5 => BuildStep5_AddToSprint(epics, backlogItems, currentSprint, AddStoryToSprint, showStoryAddedPopup, currentStep),
-                6 => BuildStep6_SprintBoard(backlogItems, currentSprint, ArchiveSprint),
-                7 => BuildStep7_Archive(backlogItems, archivedSprints, currentSprint, ArchiveSprint),
-                8 => BuildStep8_Congratulations(),
+                6 => BuildStep6_SprintBoard(backlogItems, currentSprint),
+                7 => BuildStep7_Archive(backlogItems, archivedSprints, currentSprint, ArchiveSprint, showSprintArchivedPopup, currentStep),
+                8 => BuildStep8_Congratulations(currentStep),
                 _ => Text.P("Invalid step")
             },
 
-            // Navigation
-            new Card(
-                Layout.Horizontal(
-                    currentStep.Value > 1 ?
-                        new Button("← Previous", PreviousStep).Secondary() : null,
-                    Text.P("").Width(Size.Grow()),
-                    currentStep.Value < totalSteps ?
-                        (CanProceedToNextStep() ?
-                            new Button("Next →", NextStep).Primary() :
-                            new Button("Next →", NextStep).Primary().Disabled()) :
-                        Text.P("You're all set! Continue using the Planning, Sprint Board, and Archive apps.")
-                ).Gap(8)
-            )
+            // Navigation - only show on Step 6
+            currentStep.Value == 6 ?
+                new Card(
+                    Layout.Horizontal(
+                        new Spacer().Width(Size.Grow()),
+                        currentStep.Value < totalSteps ?
+                            (CanProceedToNextStep() ?
+                                new Button("Next →", NextStep).Primary() :
+                                new Button("Next →", NextStep).Primary().Disabled()) :
+                            Text.P("You're all set! Continue using the Planning, Sprint Board, and Archive apps.")
+                    ).Gap(8)
+                ) : null
         ).Gap(8);
     }
 
@@ -370,7 +395,7 @@ public class IntroductionApp : ViewBase
         return new Card(
             Layout.Vertical(
                 Text.H3("Step 1: Create a Sprint"),
-                Text.P("A Sprint is a time-boxed iteration where you'll work on selected Stories. Create your sprint first, then we'll add work items to it. Press the 'Create Sprint' button to progress to next step."),
+                Text.P("A Sprint is a time-boxed iteration where you'll work on selected Stories. Create your sprint first, then we'll add work items to it. Input a name and goal for the sprint then press the 'Create Sprint' button to progress to next step."),
 
                 currentSprint.Value == null ?
                     SprintFormCard.Build(newSprintName, newSprintGoal, createSprint) :
@@ -727,7 +752,6 @@ public class IntroductionApp : ViewBase
                             Text.P($"The story has been successfully added to '{currentSprint.Value.Name}'."),
                             Text.P("All tasks under this story are automatically included in the sprint."),
                             Layout.Horizontal(
-                                new Button("Stay Here", () => showStoryAddedPopup.Set(false)).Secondary(),
                                 new Button("Next: Sprint Board →", () =>
                                 {
                                     showStoryAddedPopup.Set(false);
@@ -740,7 +764,7 @@ public class IntroductionApp : ViewBase
 
             // Step instructions
             Text.H2("Step 5: Add Stories to Sprint"),
-            Text.P("Select which Stories you want to work on in this sprint. Click 'Add to Sprint' on any Story to include it and all its tasks in your sprint planning. Press 'Add to Sprint' buttons below to add items."),
+            Text.P("Select which stories you want to work on in this sprint. Click 'Add to Sprint' on your story to include it and all its tasks in your sprint planning."),
 
             // Sprint Info Card at top - matching PlanningApp style
             new Card(
@@ -862,8 +886,7 @@ public class IntroductionApp : ViewBase
 
     private object BuildStep6_SprintBoard(
         IState<ImmutableArray<BacklogItem>> backlogItems,
-        IState<Sprint> currentSprint,
-        Action archiveSprint)
+        IState<Sprint> currentSprint)
     {
         var spaceingBoardColumns = 120;
 
@@ -1020,7 +1043,7 @@ public class IntroductionApp : ViewBase
 
         return Layout.Vertical(
             Text.H2("Step 6: Sprint Board - Track Your Work"),
-            Text.P("Manage and track your work during the sprint using this Sprint Board. Move tasks through the workflow from To Do → In Progress → Done using the action buttons on each task card. When you feel ready press the next button in the bottom to move to the next step."),
+            Text.P("Manage and track your work during the sprint using this Sprint Board. Move tasks through the workflow from To Do → In Progress → Done using the action buttons on each task card. When you feel ready press the next button in the bottom of the page to move to the next step."),
 
             // Show current sprint info or message if no sprint
             currentSprint.Value == null ?
@@ -1039,7 +1062,7 @@ public class IntroductionApp : ViewBase
                                           $"In Progress: {inProgressTasks.Length} | " +
                                           $"Done: {doneTasks.Length}")
                             ),
-                            new Button("Archive Sprint", archiveSprint).Secondary()
+                            new Button("Archive Sprint", () => { }).Secondary()
                         )
                     )
                 ).Width(Size.Units(200)),
@@ -1077,7 +1100,9 @@ public class IntroductionApp : ViewBase
         IState<ImmutableArray<BacklogItem>> backlogItems,
         IState<ImmutableArray<Sprint>> archivedSprints,
         IState<Sprint> currentSprint,
-        Action archiveSprint)
+        Action archiveSprint,
+        IState<bool> showSprintArchivedPopup,
+        IState<int> currentStep)
     {
         Badge GetIssueTypeBadge(IssueType type)
         {
@@ -1092,17 +1117,42 @@ public class IntroductionApp : ViewBase
         }
 
         return Layout.Vertical(
+            // Success popup when sprint is archived
+            showSprintArchivedPopup.Value ?
+                new FloatingPanel(
+                    new Card(
+                        Layout.Vertical(
+                            Text.H3("✅ Sprint Archived!"),
+                            Text.P("The sprint has been successfully archived and moved to the archive list below."),
+                            Text.P("You can now review its metrics and see all completed work."),
+                            Layout.Horizontal(
+                                new Button("Next: Complete Tutorial →", () =>
+                                {
+                                    showSprintArchivedPopup.Set(false);
+                                    currentStep.Set(8);
+                                }).Primary()
+                            ).Gap(8)
+                        ).Gap(6)
+                    ).Width(Size.Grow())
+                ) : null,
+
             Text.H2("Step 7: Sprint Archive - Review Completed Work"),
-            Text.P("The Sprint Archive allows you to review completed sprints along with key metrics like item completion rates and story points. You can also restore archived sprints back to active status if needed. Press the 'Archive Sprint' button below to archive your current sprint and see it appear in the archive list. When you are done press 'Next' in the bottom of the page to proceed to complete the introduction."),
+            Text.P("The Sprint Archive allows you to review completed sprints along with key metrics like item completion rates and story points. You can also restore archived sprints back to active status if needed. Press the 'Archive Sprint' button below to archive your current sprint and see it appear in the archive list."),
 
             // Archive current sprint button
             currentSprint.Value != null ?
                 new Card(
                     Layout.Vertical(
+                        // Archive button at top-right
+                        Layout.Horizontal(
+                            new Spacer().Width(Size.Grow()),
+                            new Button("Archive Sprint", archiveSprint).Secondary()
+                        ),
+
+                        // Sprint info below
                         Text.H3("Current Sprint"),
                         Text.P($"You still have an active sprint: {currentSprint.Value.Name}"),
-                        Text.P("Click the button below to archive it and move it to the archive view."),
-                        new Button("Archive Sprint", archiveSprint).Secondary()
+                        Text.P("Click the button above to archive it and move it to the archive view.")
                     ).Gap(4)
                 ).Width(Size.Fit()) : null,
 
@@ -1130,7 +1180,7 @@ public class IntroductionApp : ViewBase
                                     Layout.Vertical(
                                         // Buttons at top-right
                                         Layout.Horizontal(
-                                            Text.P("").Width(Size.Grow()), // Spacer to push buttons right
+                                            new Spacer().Width(Size.Grow()), // Spacer to push buttons right
                                             new Button("Make Current Sprint", () => { }).Primary(),
                                             new Button("Delete Sprint", () => { }).Destructive()
                                         ).Gap(2),
@@ -1191,8 +1241,26 @@ public class IntroductionApp : ViewBase
         ).Gap(10);
     }
 
-    private object BuildStep8_Congratulations()
+    private object BuildStep8_Congratulations(IState<int> currentStep)
     {
+        async ValueTask RestartTutorial(Event<Button> _)
+        {
+            // Clean the database
+            await CleanDatabase.ResetDatabase();
+
+            // Reset introduction completion flag
+            AppSettings.SetBoolSetting("introduction_completed", false);
+
+            // Go back to step 1
+            currentStep.Set(1);
+        }
+
+        async ValueTask CleanDatabaseOnly(Event<Button> _)
+        {
+            // Clean the database but don't restart tutorial
+            await CleanDatabase.ResetDatabase();
+        }
+
         return new Card(
             Layout.Vertical(
                 Text.H2("🎉 Congratulations!"),
@@ -1226,10 +1294,17 @@ public class IntroductionApp : ViewBase
                         Text.Strong("🚀 You're Ready!"),
                         Text.P("All the Epics, Stories, and Tasks you created are in your backlog."),
                         Text.P("Switch to the other tabs to continue using Taskly for your projects."),
+                        Text.P("The projects you have created is now in the other apps, press clean database if you want to start from a clean state."),
                         Text.P("Happy project planning! 🎯")
                     ).Gap(2)
-                ).Width(Size.Full())
+                ).Width(Size.Full()),
+
+                // Action buttons
+                Layout.Horizontal(
+                    new Button("🔄 Restart Tutorial", RestartTutorial).Secondary(),
+                    new Button("🗑️ Clean Database", CleanDatabaseOnly).Destructive()
+                ).Gap(4)
             ).Gap(8)
-        ).Width(Size.Half());
+        ).Width(Size.Fit());
     }
 }

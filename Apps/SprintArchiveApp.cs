@@ -173,7 +173,7 @@ public class SprintArchiveApp : ViewBase
                                 Layout.Vertical(
                                     // Buttons at top-right
                                     Layout.Horizontal(
-                                        Text.P("").Width(Size.Grow()), // Spacer to push buttons right
+                                        new Spacer().Width(Size.Grow()), // Spacer to push buttons right
                                         new Button("Make Current Sprint", () => RestoreSprint(sprint)).Primary(),
                                         new Button("Delete Sprint", () => DeleteSprint(sprint)).Destructive()
                                     ).Gap(2),
